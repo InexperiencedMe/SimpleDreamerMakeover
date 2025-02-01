@@ -4,3 +4,8 @@ metrics/*
 plots/*
 videos/*
 test.ipynb
+
+!checkpoints/.gitkeep
+!metrics/.gitkeep
+!plots/.gitkeep
+!videos/.gitkeep
