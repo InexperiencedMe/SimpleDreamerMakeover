@@ -1,0 +1,6 @@
+__pycache__
+checkpoints/
+metrics/
+plots/
+videos/
+test.ipynb

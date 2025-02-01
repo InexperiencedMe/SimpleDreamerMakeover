@@ -1,0 +1,98 @@
+environmentName: CarRacing-v3
+runName: firstLongerRun
+seed: 1
+
+# total gradients steps will be iterations * replayRatio
+iterationsNum: 420
+replayRatio: 100
+saveMetrics: True
+saveCheckpoints: True
+checkpointInterval: 2000
+resume: True
+checkpointToLoad: 31-01-2025_22-12_58k
+
+episodesBeforeStart: 10
+numInteractionEpisodes: 1
+numEvaluationEpisodes: 3
+
+dreamer:
+    batchSize: 32
+    batchLength: 64
+    imaginationHorizon: 15
+
+    freeNats: 3
+    discount: 0.99
+    lambda_: 0.95
+
+    useContinuationPrediction: False
+    actorLR: 0.00004
+    criticLR: 0.0001
+    worldModelLR: 0.0002
+    gradientNormType: 2
+    gradientClip: 100
+
+    recurrentSize: 600
+    latentSize: 600
+    encodedObservationSize: 1024 #FIXME: You can't just modify it
+
+    buffer:
+        capacity: 50000
+
+    encoder: 
+        depth: 32
+        stride: 2
+        kernel_size: 4
+        activation: ReLU
+
+    decoder: 
+        depth: 32
+        stride: 2
+        kernel_size: 5
+        activation: ReLU
+
+    rssm:
+        recurrentModel: 
+            hidden_size: 200
+            activation: ELU
+
+        priorNet: 
+            hidden_size: 200
+            num_layers: 2
+            activation: ELU
+            min_std: 0.1
+
+        posteriorNet:
+            hidden_size: 200
+            num_layers: 2
+            activation: ELU
+            min_std: 0.1
+        
+    reward:
+        hidden_size: 400
+        num_layers: 2
+        activation: ELU
+
+    continue_:
+        hidden_size: 400
+        num_layers: 3
+        activation: ELU
+    
+    agent:
+        actor:
+            hidden_size: 400
+            min_std: 0.0001
+            init_std: 5.
+            mean_scale: 5
+            activation: ELU
+            num_layers: 2
+
+        critic: 
+            hidden_size: 400
+            activation: ELU
+            num_layers: 3 
+
+folderNames:
+    metricsFolder: metrics
+    plotsFolder: plots
+    checkpointsFolder: checkpoints
+    videosFolder: videos
