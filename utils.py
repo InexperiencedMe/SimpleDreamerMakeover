@@ -46,6 +46,7 @@ def getEnvProperties(env):
     return observationShape, discreteActionBool, actionSize
 
 def saveLossesToCSV(filename, metrics):
+    ensureParentFolderExists(filename)
     fileAlreadyExists = os.path.isfile(filename + ".csv")
     with open(filename + ".csv", mode='a', newline='') as file:
         writer = csv.writer(file)
@@ -56,6 +57,7 @@ def saveLossesToCSV(filename, metrics):
 def plotMetrics(filename, title="", savePath="metricsPlot", window=10):
     if not filename.endswith(".csv"):
         filename += ".csv"
+    ensureParentFolderExists(filename)
     
     data = pd.read_csv(filename)
     fig = pgo.Figure()
@@ -220,3 +222,8 @@ class DynamicInfos:
 
     def clear(self):
         self.data = {}
+
+def ensureParentFolderExists(path):
+    parentFolder = os.path.dirname(path)
+    if parentFolder:
+        os.makedirs(parentFolder, exist_ok=True)
