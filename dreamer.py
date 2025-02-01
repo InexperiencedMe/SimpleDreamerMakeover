@@ -6,7 +6,7 @@ import os
 
 from networks import RSSM, RewardModel, ContinueModel, Encoder, Decoder, Actor, Critic
 
-from utils import computeLambdaValues, create_normal_dist, DynamicInfos, saveLossesToCSV, ensureParentFolderExists
+from utils import computeLambdaValues, create_normal_dist, DynamicInfos, saveLossesToCSV
 from buffer import ReplayBuffer
 import imageio
 
@@ -208,7 +208,6 @@ class Dreamer:
                         self.totalEnvSteps += stepCount
 
                     if saveVideo and i == 0:
-                        ensureParentFolderExists(filename)
                         finalFilename = f"{filename}_reward_{currentScore:.0f}.mp4"
                         with imageio.get_writer(finalFilename, fps=fps) as video:
                             for frame in frames:
@@ -236,7 +235,6 @@ class Dreamer:
             'totalGradientSteps'    : self.totalGradientSteps}
         if self.config.useContinuationPrediction:
             checkpoint['continuePredictor'] = self.continuePredictor.state_dict()
-        ensureParentFolderExists(checkpointPath)
         torch.save(checkpoint, checkpointPath)
 
     def loadCheckpoint(self, checkpointPath):

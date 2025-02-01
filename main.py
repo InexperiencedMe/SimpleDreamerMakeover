@@ -1,15 +1,10 @@
-import os
 import argparse
-from datetime import datetime
 from dreamer import Dreamer
 from utils import loadConfig, seedEverything, plotMetrics
-from buffer import ReplayBuffer
 import torch
-import numpy as np
-import random
 import gymnasium as gym
 from envs import getEnvProperties, GymPixelsProcessingWrapper, CleanGymWrapper
-from utils import saveLossesToCSV
+from utils import saveLossesToCSV, ensureParentFolders
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -24,6 +19,8 @@ def main(configFile):
     plotFilename            = f"{config.folderNames.plotsFolder}/{runName}"
     checkpointFilenameBase  = f"{config.folderNames.checkpointsFolder}/{runName}"
     videoFilenameBase       = f"{config.folderNames.videosFolder}/{runName}"
+    ensureParentFolders(metricsFilename, plotFilename, checkpointFilenameBase, videoFilenameBase)
+
     env             = CleanGymWrapper(GymPixelsProcessingWrapper(gym.wrappers.ResizeObservation(gym.make(config.environmentName), (64, 64))))
     envEvaluation   = CleanGymWrapper(GymPixelsProcessingWrapper(gym.wrappers.ResizeObservation(gym.make(config.environmentName, render_mode="rgb_array"), (64, 64))))
     observationShape, discreteActionBool, actionSize = getEnvProperties(env)

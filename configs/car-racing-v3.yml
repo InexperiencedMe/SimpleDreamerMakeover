@@ -3,12 +3,12 @@ runName: firstLongerRun
 seed: 1
 
 # total gradients steps will be iterations * replayRatio
-iterationsNum: 420
-replayRatio: 100
+iterationsNum: 10
+replayRatio: 10
 saveMetrics: True
 saveCheckpoints: True
-checkpointInterval: 2000
-resume: True
+checkpointInterval: 20
+resume: False
 checkpointToLoad: 31-01-2025_22-12_58k
 
 episodesBeforeStart: 10
