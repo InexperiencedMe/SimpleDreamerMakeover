@@ -24,7 +24,7 @@ def main(configFile):
     env             = CleanGymWrapper(GymPixelsProcessingWrapper(gym.wrappers.ResizeObservation(gym.make(config.environmentName), (64, 64))))
     envEvaluation   = CleanGymWrapper(GymPixelsProcessingWrapper(gym.wrappers.ResizeObservation(gym.make(config.environmentName, render_mode="rgb_array"), (64, 64))))
     observationShape, discreteActionBool, actionSize = getEnvProperties(env)
-    print(f"envProperties: {getEnvProperties(env)}")
+    print(f"envProperties: obs {observationShape}, discrete action {discreteActionBool}, action size {actionSize}")
 
     dreamer = Dreamer(observationShape, discreteActionBool, actionSize, config.dreamer, device)
     if config.resume:

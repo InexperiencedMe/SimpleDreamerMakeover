@@ -1,13 +1,13 @@
 environmentName: CarRacing-v3
-runName: firstLongerRun
+runName: check
 seed: 1
 
 # total gradients steps will be iterations * replayRatio
-iterationsNum: 10
-replayRatio: 10
+iterationsNum: 200
+replayRatio: 100
 saveMetrics: True
 saveCheckpoints: True
-checkpointInterval: 20
+checkpointInterval: 2000
 resume: False
 checkpointToLoad: 31-01-2025_22-12_58k
 

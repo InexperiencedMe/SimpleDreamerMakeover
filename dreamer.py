@@ -44,37 +44,14 @@ class Dreamer:
         self.totalEnvSteps = 0
         self.totalGradientSteps = 0
 
-    def train(self, env, metricsFilename, videoFilenameBase):
-        if len(self.buffer) < 1:
-            self.environmentInteraction(env, self.config.startupEpisodes)
-
-        for i in range(self.config.trainingIterations):
-            for _ in range(self.config.replayRatio):
-                data = self.buffer.sample(self.config.batchSize, self.config.batchLength)
-                posteriors, recurrentStates, worldModelMetrics = self.worldModelTraining(data)
-                actorCriticMetrics = self.behaviorTraining(posteriors, recurrentStates)
-                self.totalGradientSteps += 1
-
-            mostRecentScore = self.environmentInteraction(env, self.config.numInteractionEpisodes)
-
-            metricsBase = {"envSteps": self.totalEnvSteps, "gradientSteps": self.totalGradientSteps, "totalReward" : mostRecentScore}
-            saveLossesToCSV(metricsFilename, metricsBase | worldModelMetrics | actorCriticMetrics)
-
-            if i % 10 == 0:
-                self.evaluate(env, f"{videoFilenameBase}_{self.totalGradientSteps}_{self.totalEnvSteps}")
-
-    def evaluate(self, env, filename):
-        self.environmentInteraction(env, 1, saveVideo=True, filename=filename)
-
     def worldModelTraining(self, data):
-        prior, recurrentState = self.worldModel.recurrentModelInitialInput(len(data.action))
-
-        data.embedded_observation = self.encoder(data.observation)
+        data.encodedObservation = self.encoder(data.observation)
+        previousLatentState, previousRecurrentState = self.worldModel.recurrentModelInitialInput(len(data.action))
 
         for t in range(1, self.config.batchLength):
-            recurrentState = self.worldModel.recurrentModel(prior, data.action[:, t-1], recurrentState)
+            recurrentState = self.worldModel.recurrentModel(previousLatentState, data.action[:, t-1], previousRecurrentState)
             priorDistribution, prior = self.worldModel.priorNet(recurrentState)
-            posteriorDistribution, posterior = self.worldModel.posteriorNet(data.embedded_observation[:, t], recurrentState)
+            posteriorDistribution, posterior = self.worldModel.posteriorNet(data.encodedObservation[:, t], recurrentState)
 
             self.worldModelTrainingInfos.append(
                 priors                      = prior,
@@ -84,27 +61,26 @@ class Dreamer:
                 posteriorDistributionsMeans = posteriorDistribution.mean,
                 posteriorDistributionsStds  = posteriorDistribution.scale,
                 recurrentStates             = recurrentState)
-            prior = posterior
+            previousLatentState = posterior
+            previousRecurrentState = recurrentState
         infos = self.worldModelTrainingInfos.get_stacked()
 
-        reconstructedObservationsDistributions = self.decoder(infos.posteriors, infos.recurrentStates)
-        reconstructionLoss                     = -reconstructedObservationsDistributions.log_prob(data.observation[:, 1:]).mean()
+        reconstructedObservationsDistributions  =  self.decoder(infos.posteriors, infos.recurrentStates)
+        reconstructionLoss                      = -reconstructedObservationsDistributions.log_prob(data.observation[:, 1:]).mean()
 
+        rewardDistribution  =  self.rewardPredictor(infos.posteriors, infos.recurrentStates)
+        rewardLoss          = -rewardDistribution.log_prob(data.reward[:, 1:]).mean()
+
+        priorDistribution     = create_normal_dist(infos.priorDistributionsMeans, infos.priorDistributionsStds, event_shape=1)
+        posteriorDistribution = create_normal_dist(infos.posteriorDistributionsMeans, infos.posteriorDistributionsStds, event_shape=1)
+        klLoss = torch.mean(torch.distributions.kl_divergence(posteriorDistribution, priorDistribution)) # Change that to maxing individual dists
+        klLoss = torch.max(torch.tensor(self.config.freeNats).to(self.device), klLoss)
+
+        worldModelLoss = klLoss + reconstructionLoss + rewardLoss
         if self.config.useContinuationPrediction:
             continueDistribution = self.continuePredictor(infos.posteriors, infos.recurrentStates)
             continueLoss         = nn.BCELoss(continueDistribution.probs, 1 - data.done[:, 1:])
-
-        rewardDistribution = self.rewardPredictor(infos.posteriors, infos.recurrentStates)
-        rewardLoss         = -rewardDistribution.log_prob(data.reward[:, 1:]).mean()
-
-        priorDistribution   = create_normal_dist(infos.priorDistributionsMeans, infos.priorDistributionsStds, event_shape=1)
-        posterior_dist      = create_normal_dist(infos.posteriorDistributionsMeans, infos.posteriorDistributionsStds, event_shape=1)
-        klLoss = torch.mean(torch.distributions.kl_divergence(posterior_dist, priorDistribution)) # Change that to maxing individual dists
-        klLoss = torch.max(torch.tensor(self.config.freeNats).to(self.device), klLoss)
-
-        worldModelLoss = (klLoss + reconstructionLoss + rewardLoss)
-        if self.config.useContinuationPrediction:
-            worldModelLoss += continueLoss.mean()
+            worldModelLoss      += continueLoss.mean()
 
         self.worldModelOptimizer.zero_grad()
         worldModelLoss.backward()
@@ -118,38 +94,30 @@ class Dreamer:
             "rewardPredictorLoss"   : rewardLoss.item(),
             "klLoss"                : klLoss.item() - klLossShiftForGraphing}
 
-        return infos.posteriors.detach(), infos.recurrentStates.detach(), metrics
+        return infos.posteriors.detach().view(-1, self.config.latentSize), infos.recurrentStates.detach().view(-1, self.config.latentSize), metrics
 
-    def behaviorTraining(self, latentStates, recurrentStates):
-        latentState = latentStates.reshape(-1, self.config.latentSize)
-        recurrentState = recurrentStates.reshape(-1, self.config.recurrentSize)
-
+    def behaviorTraining(self, latentState, recurrentState):
         for _ in range(self.config.imaginationHorizon):
             action = self.actor(latentState, recurrentState)
             recurrentState = self.worldModel.recurrentModel(latentState, action, recurrentState)
             _, latentState = self.worldModel.priorNet(recurrentState)
             self.behaviorTrainingInfos.append(latentStates=latentState, recurrentStates=recurrentState)
-
         infos = self.behaviorTrainingInfos.get_stacked()
         
         predictedRewards = self.rewardPredictor(infos.latentStates, infos.recurrentStates).mean
-        values = self.critic(infos.latentStates, infos.recurrentStates).mean
+        values           = self.critic(infos.latentStates, infos.recurrentStates).mean
+        continues        = self.continuePredictor(infos.latentStates, infos.recurrentStates).mean if self.config.useContinuationPrediction else self.config.discount*torch.ones_like(values)
 
-        if self.config.useContinuationPrediction:
-            continues = self.continuePredictor(infos.latentStates, infos.recurrentStates).mean
-        else:
-            continues = self.config.discount * torch.ones_like(values)
-
-        lambdaValues = computeLambdaValues(predictedRewards, values, continues, self.config.imaginationHorizon, self.device, self.config.lambda_)
-        actorLoss = -torch.mean(lambdaValues)
+        lambdaValues    = computeLambdaValues(predictedRewards, values, continues, self.config.imaginationHorizon, self.device, self.config.lambda_)
+        actorLoss       = -torch.mean(lambdaValues)
 
         self.actorOptimizer.zero_grad()
         actorLoss.backward()
         nn.utils.clip_grad_norm_(self.actor.parameters(), self.config.gradientClip, norm_type=self.config.gradientNormType)
         self.actorOptimizer.step()
 
-        valueDistributions = self.critic(infos.latentStates.detach()[:, :-1], infos.recurrentStates.detach()[:, :-1])
-        criticLoss = -torch.mean(valueDistributions.log_prob(lambdaValues.detach()))
+        valueDistributions  =  self.critic(infos.latentStates.detach()[:, :-1], infos.recurrentStates.detach()[:, :-1])
+        criticLoss          = -torch.mean(valueDistributions.log_prob(lambdaValues.detach()))
 
         self.criticOptimizer.zero_grad()
         criticLoss.backward()
