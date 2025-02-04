@@ -1,11 +1,12 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.distributions import Normal, TanhTransform
+from torch.distributions import Normal, TanhTransform, Bernoulli
 
 from utils import create_normal_dist, sequentialModel1D, horizontal_forward
 
 
+# Needs to go. Take out recurrent, prior, posterior
 class RSSM(nn.Module):
     def __init__(self, actionSize, config, device):
         super().__init__()
@@ -19,7 +20,7 @@ class RSSM(nn.Module):
     def recurrentModelInitialInput(self, batchSize):
         return self.priorNet.initialInput(batchSize).to(self.device), self.recurrentModel.initialInput(batchSize).to(self.device)
 
-
+# Needs a remake
 class RecurrentModel(nn.Module):
     def __init__(self, actionSize, config):
         super().__init__()
@@ -41,7 +42,7 @@ class RecurrentModel(nn.Module):
     def initialInput(self, batchSize):
         return torch.zeros(batchSize, self.recurrentSize)
 
-
+# Needs a remake
 class PriorNet(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -60,7 +61,7 @@ class PriorNet(nn.Module):
     def initialInput(self, batchSize):
         return torch.zeros(batchSize, self.latentSize)
 
-
+# Needs a remake
 class PosteriorNet(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -78,35 +79,29 @@ class PosteriorNet(nn.Module):
         return posterior_dist, posterior
 
 
+# Remade
 class RewardModel(nn.Module):
-    def __init__(self, config):
+    def __init__(self, inputSize, config):
         super().__init__()
         self.config = config.reward
-        self.latentSize = config.latentSize
-        self.recurrentSize = config.recurrentSize
+        self.network = sequentialModel1D(inputSize, [self.config.hiddenSize]*self.config.numLayers, 2, self.config.activation)
 
-        self.network = sequentialModel1D(self.latentSize + self.recurrentSize, [self.config.hiddenSize]*self.config.numLayers, 1, self.config.activation)
-
-    def forward(self, posterior, deterministic):
-        x = horizontal_forward(self.network, posterior, deterministic, output_shape=(1,))
-        dist = create_normal_dist(x, std=1, event_shape=1)
-        return dist
+    def forward(self, x):
+        mean, logStd = self.network(x).chunk(2, dim=-1)
+        return Normal(mean, torch.exp(logStd))
 
 
+# Remade
 class ContinueModel(nn.Module):
-    def __init__(self, config):
+    def __init__(self, inputSize, config):
         super().__init__()
         self.config = config.continue_
-        self.latentSize = config.latentSize
-        self.recurrentSize = config.recurrentSize
+        self.network = sequentialModel1D(inputSize, [self.config.hiddenSize]*self.config.numLayers, 1, self.config.activation)
 
-        self.network = sequentialModel1D(self.latentSize + self.recurrentSize, [self.config.hiddenSize]*self.config.numLayers, 1, self.config.activation)
+    def forward(self, x):
+        return Bernoulli(logits=self.network(x))
 
-    def forward(self, posterior, deterministic):
-        x = horizontal_forward(self.network, posterior, deterministic, output_shape=(1,))
-        dist = torch.distributions.Bernoulli(logits=x)
-        return dist
-
+# Needs a remake
 class Encoder(nn.Module):
     def __init__(self, observation_shape, config):
         super().__init__()
@@ -124,7 +119,7 @@ class Encoder(nn.Module):
     def forward(self, x):
         return horizontal_forward(self.network, x, input_shape=self.observation_shape)
 
-
+# Needs a remake
 class Decoder(nn.Module):
     def __init__(self, observation_shape, config):
         super().__init__()
@@ -151,7 +146,9 @@ class Decoder(nn.Module):
         x = horizontal_forward(self.network, posterior, deterministic, output_shape=self.observation_shape)
         dist = create_normal_dist(x, std=1, event_shape=len(self.observation_shape))
         return dist
-    
+
+
+# Needs a remake
 class Actor(nn.Module):
     def __init__(self, discrete_action_bool, actionSize, config):
         super().__init__()
@@ -175,17 +172,15 @@ class Actor(nn.Module):
             dist = torch.distributions.TransformedDistribution(dist, TanhTransform())
             action = torch.distributions.Independent(dist, 1).rsample()
         return action
-    
+
+
+# Remade
 class Critic(nn.Module):
-    def __init__(self, config):
+    def __init__(self, inputSize, config):
         super().__init__()
         self.config = config.agent.critic
-        self.latentSize = config.latentSize
-        self.recurrentSize = config.recurrentSize
+        self.network = sequentialModel1D(inputSize, [self.config.hiddenSize]*self.config.numLayers, 2, self.config.activation)
 
-        self.network = sequentialModel1D(self.latentSize + self.recurrentSize, [self.config.hiddenSize]*self.config.numLayers, 1, self.config.activation)
-
-    def forward(self, posterior, deterministic):
-        x = horizontal_forward(self.network, posterior, deterministic, output_shape=(1,))
-        dist = create_normal_dist(x, std=1, event_shape=1)
-        return dist
+    def forward(self, x):
+        mean, logStd = self.network(x).chunk(2, dim=-1)
+        return Normal(mean, torch.exp(logStd))

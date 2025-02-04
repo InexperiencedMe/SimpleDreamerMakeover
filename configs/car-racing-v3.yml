@@ -32,7 +32,7 @@ dreamer:
     gradientClip: 100
 
     recurrentSize: 600
-    latentSize: 600
+    latentSize: 600 # Exchange for length and size
     encodedObservationSize: 1024 #FIXME: You can't just modify it
 
     buffer:
