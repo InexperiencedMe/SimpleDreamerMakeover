@@ -18,12 +18,14 @@ def seedEverything(seed):
     torch.manual_seed(seed)
     torch.backends.cudnn.deterministic = True
 
+
 def findFile(filename):
     currentDir = os.getcwd()
     for root, dirs, files in os.walk(currentDir):
         if filename in files:
             return os.path.join(root, filename)
     raise FileNotFoundError(f"File '{filename}' not found in subdirectories of {currentDir}")
+
 
 def loadConfig(config_path):
     if not config_path.endswith(".yml"):
@@ -32,6 +34,7 @@ def loadConfig(config_path):
     with open(config_path) as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
     return attridict(config)
+
 
 def getEnvProperties(env):
     observationShape = env.observation_space.shape
@@ -45,6 +48,7 @@ def getEnvProperties(env):
         raise Exception
     return observationShape, discreteActionBool, actionSize
 
+
 def saveLossesToCSV(filename, metrics):
     fileAlreadyExists = os.path.isfile(filename + ".csv")
     with open(filename + ".csv", mode='a', newline='') as file:
@@ -52,6 +56,7 @@ def saveLossesToCSV(filename, metrics):
         if not fileAlreadyExists:
             writer.writerow(metrics.keys())
         writer.writerow(metrics.values())
+
 
 def plotMetrics(filename, title="", savePath="metricsPlot", window=10):
     if not filename.endswith(".csv"):
@@ -115,6 +120,7 @@ def plotMetrics(filename, title="", savePath="metricsPlot", window=10):
         savePath += ".html"
     fig.write_html(savePath)
 
+
 def horizontal_forward(network, x, y=None, input_shape=(-1,), output_shape=(-1,)):
     batch_with_horizon_shape = x.shape[: -len(input_shape)]
     if not batch_with_horizon_shape:
@@ -129,32 +135,21 @@ def horizontal_forward(network, x, y=None, input_shape=(-1,), output_shape=(-1,)
     return x
 
 
-# TODO: Replace with my own sequential1D
-def build_network(input_size, hidden_size, num_layers, activation, output_size):
-    assert num_layers >= 2, "num_layers must be at least 2"
-    activation = getattr(nn, activation)()
+def sequentialModel1D(inputSize, hiddenSizes, outputSize, activationFunction="Tanh", finishWithActivation=False):
+    activationFunction = getattr(nn, activationFunction)()
     layers = []
-    layers.append(nn.Linear(input_size, hidden_size))
-    layers.append(activation)
+    currentInputSize = inputSize
 
-    for i in range(num_layers - 2):
-        layers.append(nn.Linear(hidden_size, hidden_size))
-        layers.append(activation)
+    for hiddenSize in hiddenSizes:
+        layers.append(nn.Linear(currentInputSize, hiddenSize))
+        layers.append(activationFunction)
+        currentInputSize = hiddenSize
+    
+    layers.append(nn.Linear(currentInputSize, outputSize))
+    if finishWithActivation:
+        layers.append(activationFunction)
 
-    layers.append(nn.Linear(hidden_size, output_size))
-
-    network = nn.Sequential(*layers)
-    network.apply(initialize_weights)
-    return network
-
-
-def initialize_weights(m):
-    if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
-        nn.init.kaiming_uniform_(m.weight.data, nonlinearity="relu")
-        nn.init.constant_(m.bias.data, 0)
-    elif isinstance(m, nn.Linear):
-        nn.init.kaiming_uniform_(m.weight.data)
-        nn.init.constant_(m.bias.data, 0)
+    return nn.Sequential(*layers)
 
 
 def create_normal_dist(
@@ -201,25 +196,6 @@ def computeLambdaValues(rewards, values, continues, horizon_length, device, lamb
     returns = torch.stack(list(reversed(outputs)), dim=1).to(device)
     return returns
 
-
-class DynamicInfos:
-    def __init__(self, device):
-        self.device = device
-        self.data = {}
-
-    def append(self, **kwargs):
-        for key, value in kwargs.items():
-            if key not in self.data:
-                self.data[key] = []
-            self.data[key].append(value)
-
-    def get_stacked(self, time_axis=1):
-        stacked_data = attridict({key: torch.stack(self.data[key], dim=time_axis).to(self.device) for key in self.data})
-        self.clear()
-        return stacked_data
-
-    def clear(self):
-        self.data = {}
 
 def ensureParentFolders(*paths):
     for path in paths:

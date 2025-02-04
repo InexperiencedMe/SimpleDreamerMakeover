@@ -6,7 +6,7 @@ import os
 
 from networks import RSSM, RewardModel, ContinueModel, Encoder, Decoder, Actor, Critic
 
-from utils import computeLambdaValues, create_normal_dist, DynamicInfos, saveLossesToCSV
+from utils import computeLambdaValues, create_normal_dist
 from buffer import ReplayBuffer
 import imageio
 
@@ -37,9 +37,6 @@ class Dreamer:
         self.actorOptimizer         = torch.optim.Adam(self.actor.parameters(), lr=self.config.actorLR)
         self.criticOptimizer        = torch.optim.Adam(self.critic.parameters(), lr=self.config.criticLR)
 
-        self.worldModelTrainingInfos = DynamicInfos(self.device)
-        self.behaviorTrainingInfos   = DynamicInfos(self.device)
-
         self.totalEpisodes = 0
         self.totalEnvSteps = 0
         self.totalGradientSteps = 0
@@ -48,37 +45,45 @@ class Dreamer:
         data.encodedObservation = self.encoder(data.observation)
         previousLatentState, previousRecurrentState = self.worldModel.recurrentModelInitialInput(len(data.action))
 
+        priors, priorDistributionsMeans, priorDistributionsStds, posteriors, posteriorDistributionsMeans, posteriorDistributionsStds, recurrentStates = [], [], [], [], [], [], []
         for t in range(1, self.config.batchLength):
             recurrentState = self.worldModel.recurrentModel(previousLatentState, data.action[:, t-1], previousRecurrentState)
             priorDistribution, prior = self.worldModel.priorNet(recurrentState)
             posteriorDistribution, posterior = self.worldModel.posteriorNet(data.encodedObservation[:, t], recurrentState)
 
-            self.worldModelTrainingInfos.append(
-                priors                      = prior,
-                priorDistributionsMeans     = priorDistribution.mean,
-                priorDistributionsStds      = priorDistribution.scale,
-                posteriors                  = posterior,
-                posteriorDistributionsMeans = posteriorDistribution.mean,
-                posteriorDistributionsStds  = posteriorDistribution.scale,
-                recurrentStates             = recurrentState)
+            priors.append(prior)
+            priorDistributionsMeans.append(priorDistribution.mean)
+            priorDistributionsStds.append(priorDistribution.scale)
+            posteriors.append(posterior)
+            posteriorDistributionsMeans.append(posteriorDistribution.mean)
+            posteriorDistributionsStds.append(posteriorDistribution.scale)
+            recurrentStates.append(recurrentState)
+
             previousLatentState = posterior
             previousRecurrentState = recurrentState
-        infos = self.worldModelTrainingInfos.get_stacked()
 
-        reconstructedObservationsDistributions  =  self.decoder(infos.posteriors, infos.recurrentStates)
+        priors                      = torch.stack(priors, dim=1)
+        priorDistributionsMeans     = torch.stack(priorDistributionsMeans, dim=1)
+        priorDistributionsStds      = torch.stack(priorDistributionsStds, dim=1)
+        posteriors                  = torch.stack(posteriors, dim=1)
+        posteriorDistributionsMeans = torch.stack(posteriorDistributionsMeans, dim=1)
+        posteriorDistributionsStds  = torch.stack(posteriorDistributionsStds, dim=1)
+        recurrentStates             = torch.stack(recurrentStates, dim=1)
+
+        reconstructedObservationsDistributions  =  self.decoder(posteriors, recurrentStates)
         reconstructionLoss                      = -reconstructedObservationsDistributions.log_prob(data.observation[:, 1:]).mean()
 
-        rewardDistribution  =  self.rewardPredictor(infos.posteriors, infos.recurrentStates)
+        rewardDistribution  =  self.rewardPredictor(posteriors, recurrentStates)
         rewardLoss          = -rewardDistribution.log_prob(data.reward[:, 1:]).mean()
 
-        priorDistribution     = create_normal_dist(infos.priorDistributionsMeans, infos.priorDistributionsStds, event_shape=1)
-        posteriorDistribution = create_normal_dist(infos.posteriorDistributionsMeans, infos.posteriorDistributionsStds, event_shape=1)
+        priorDistribution     = create_normal_dist(priorDistributionsMeans, priorDistributionsStds, event_shape=1)
+        posteriorDistribution = create_normal_dist(posteriorDistributionsMeans, posteriorDistributionsStds, event_shape=1)
         klLoss = torch.mean(torch.distributions.kl_divergence(posteriorDistribution, priorDistribution)) # Change that to maxing individual dists
         klLoss = torch.max(torch.tensor(self.config.freeNats).to(self.device), klLoss)
 
         worldModelLoss = klLoss + reconstructionLoss + rewardLoss
         if self.config.useContinuationPrediction:
-            continueDistribution = self.continuePredictor(infos.posteriors, infos.recurrentStates)
+            continueDistribution = self.continuePredictor(posteriors, recurrentStates)
             continueLoss         = nn.BCELoss(continueDistribution.probs, 1 - data.done[:, 1:])
             worldModelLoss      += continueLoss.mean()
 
@@ -94,29 +99,35 @@ class Dreamer:
             "rewardPredictorLoss"   : rewardLoss.item(),
             "klLoss"                : klLoss.item() - klLossShiftForGraphing}
 
-        return infos.posteriors.detach().view(-1, self.config.latentSize), infos.recurrentStates.detach().view(-1, self.config.latentSize), metrics
+        return posteriors.detach().view(-1, self.config.latentSize), recurrentStates.detach().view(-1, self.config.recurrentSize), metrics
 
     def behaviorTraining(self, latentState, recurrentState):
+        # fullStates = [] # TODO: Make nets work on fullstates, dont concatenate inside nets
+        latentStates, recurrentStates = [], []
         for _ in range(self.config.imaginationHorizon):
             action = self.actor(latentState, recurrentState)
             recurrentState = self.worldModel.recurrentModel(latentState, action, recurrentState)
             _, latentState = self.worldModel.priorNet(recurrentState)
-            self.behaviorTrainingInfos.append(latentStates=latentState, recurrentStates=recurrentState)
-        infos = self.behaviorTrainingInfos.get_stacked()
-        
-        predictedRewards = self.rewardPredictor(infos.latentStates, infos.recurrentStates).mean
-        values           = self.critic(infos.latentStates, infos.recurrentStates).mean
-        continues        = self.continuePredictor(infos.latentStates, infos.recurrentStates).mean if self.config.useContinuationPrediction else self.config.discount*torch.ones_like(values)
 
-        lambdaValues    = computeLambdaValues(predictedRewards, values, continues, self.config.imaginationHorizon, self.device, self.config.lambda_)
-        actorLoss       = -torch.mean(lambdaValues)
+            latentStates.append(latentState)
+            recurrentStates.append(recurrentState)
+
+        latentStates    = torch.stack(latentStates,    dim=1)
+        recurrentStates = torch.stack(recurrentStates, dim=1)
+        
+        predictedRewards = self.rewardPredictor(latentStates, recurrentStates).mean
+        values           = self.critic(latentStates, recurrentStates).mean
+        continues        = self.continuePredictor(latentStates, recurrentStates).mean if self.config.useContinuationPrediction else self.config.discount*torch.ones_like(values)
+        lambdaValues     = computeLambdaValues(predictedRewards, values, continues, self.config.imaginationHorizon, self.device, self.config.lambda_)
+
+        actorLoss        = -torch.mean(lambdaValues)
 
         self.actorOptimizer.zero_grad()
         actorLoss.backward()
         nn.utils.clip_grad_norm_(self.actor.parameters(), self.config.gradientClip, norm_type=self.config.gradientNormType)
         self.actorOptimizer.step()
 
-        valueDistributions  =  self.critic(infos.latentStates.detach()[:, :-1], infos.recurrentStates.detach()[:, :-1])
+        valueDistributions  =  self.critic(latentStates.detach()[:, :-1], recurrentStates.detach()[:, :-1])
         criticLoss          = -torch.mean(valueDistributions.log_prob(lambdaValues.detach()))
 
         self.criticOptimizer.zero_grad()

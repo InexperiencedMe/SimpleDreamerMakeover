@@ -1,17 +1,17 @@
 environmentName: CarRacing-v3
-runName: check
+runName: myVersion2
 seed: 1
 
 # total gradients steps will be iterations * replayRatio
-iterationsNum: 200
+iterationsNum: 100
 replayRatio: 100
-saveMetrics: True
-saveCheckpoints: True
+saveMetrics: True        # Saves metrics at replayRatio interval
+saveCheckpoints: False
 checkpointInterval: 2000
 resume: False
-checkpointToLoad: 31-01-2025_22-12_58k
+checkpointToLoad: 2k
 
-episodesBeforeStart: 10
+episodesBeforeStart: 2
 numInteractionEpisodes: 1
 numEvaluationEpisodes: 3
 
@@ -52,44 +52,44 @@ dreamer:
 
     rssm:
         recurrentModel: 
-            hidden_size: 200
+            hiddenSize: 200
             activation: ELU
 
         priorNet: 
-            hidden_size: 200
-            num_layers: 2
+            hiddenSize: 200
+            numLayers: 2
             activation: ELU
             min_std: 0.1
 
         posteriorNet:
-            hidden_size: 200
-            num_layers: 2
+            hiddenSize: 200
+            numLayers: 2
             activation: ELU
             min_std: 0.1
         
     reward:
-        hidden_size: 400
-        num_layers: 2
+        hiddenSize: 400
+        numLayers: 2
         activation: ELU
 
     continue_:
-        hidden_size: 400
-        num_layers: 3
+        hiddenSize: 400
+        numLayers: 3
         activation: ELU
     
     agent:
         actor:
-            hidden_size: 400
+            hiddenSize: 400
             min_std: 0.0001
             init_std: 5.
             mean_scale: 5
             activation: ELU
-            num_layers: 2
+            numLayers: 2
 
         critic: 
-            hidden_size: 400
+            hiddenSize: 400
             activation: ELU
-            num_layers: 3 
+            numLayers: 3 
 
 folderNames:
     metricsFolder: metrics

@@ -3,16 +3,16 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Normal, TanhTransform
 
-from utils import create_normal_dist, build_network, horizontal_forward, initialize_weights
+from utils import create_normal_dist, sequentialModel1D, horizontal_forward
 
 
 class RSSM(nn.Module):
-    def __init__(self, action_size, config, device):
+    def __init__(self, actionSize, config, device):
         super().__init__()
         self.config = config.rssm
         self.device = device
 
-        self.recurrentModel = RecurrentModel(action_size, config)
+        self.recurrentModel = RecurrentModel(actionSize, config)
         self.priorNet = PriorNet(config)
         self.posteriorNet = PosteriorNet(config)
 
@@ -21,7 +21,7 @@ class RSSM(nn.Module):
 
 
 class RecurrentModel(nn.Module):
-    def __init__(self, action_size, config):
+    def __init__(self, actionSize, config):
         super().__init__()
         self.config = config.rssm.recurrentModel
         self.latentSize = config.latentSize
@@ -29,8 +29,8 @@ class RecurrentModel(nn.Module):
 
         self.activation = getattr(nn, self.config.activation)()
 
-        self.linear = nn.Linear(self.latentSize + action_size, self.config.hidden_size)
-        self.recurrent = nn.GRUCell(self.config.hidden_size, self.recurrentSize)
+        self.linear = nn.Linear(self.latentSize + actionSize, self.config.hiddenSize)
+        self.recurrent = nn.GRUCell(self.config.hiddenSize, self.recurrentSize)
 
     def forward(self, embedded_state, action, deterministic):
         x = torch.cat((embedded_state, action), 1)
@@ -49,7 +49,7 @@ class PriorNet(nn.Module):
         self.latentSize = config.latentSize
         self.recurrentSize = config.recurrentSize
 
-        self.network = build_network(self.recurrentSize, self.config.hidden_size, self.config.num_layers, self.config.activation, self.latentSize * 2, )
+        self.network = sequentialModel1D(self.recurrentSize, [self.config.hiddenSize]*self.config.numLayers, self.latentSize*2, self.config.activation)
 
     def forward(self, x):
         x = self.network(x)
@@ -69,7 +69,7 @@ class PosteriorNet(nn.Module):
         self.latentSize = config.latentSize
         self.recurrentSize = config.recurrentSize
 
-        self.network = build_network(self.encodedObservationSize + self.recurrentSize, self.config.hidden_size, self.config.num_layers, self.config.activation, self.latentSize * 2)
+        self.network = sequentialModel1D(self.encodedObservationSize + self.recurrentSize, [self.config.hiddenSize]*self.config.numLayers, self.latentSize*2, self.config.activation)
 
     def forward(self, embedded_observation, deterministic):
         x = self.network(torch.cat((embedded_observation, deterministic), 1))
@@ -85,7 +85,7 @@ class RewardModel(nn.Module):
         self.latentSize = config.latentSize
         self.recurrentSize = config.recurrentSize
 
-        self.network = build_network(self.latentSize + self.recurrentSize, self.config.hidden_size, self.config.num_layers, self.config.activation, 1)
+        self.network = sequentialModel1D(self.latentSize + self.recurrentSize, [self.config.hiddenSize]*self.config.numLayers, 1, self.config.activation)
 
     def forward(self, posterior, deterministic):
         x = horizontal_forward(self.network, posterior, deterministic, output_shape=(1,))
@@ -100,7 +100,7 @@ class ContinueModel(nn.Module):
         self.latentSize = config.latentSize
         self.recurrentSize = config.recurrentSize
 
-        self.network = build_network(self.latentSize + self.recurrentSize, self.config.hidden_size, self.config.num_layers, self.config.activation, 1)
+        self.network = sequentialModel1D(self.latentSize + self.recurrentSize, [self.config.hiddenSize]*self.config.numLayers, 1, self.config.activation)
 
     def forward(self, posterior, deterministic):
         x = horizontal_forward(self.network, posterior, deterministic, output_shape=(1,))
@@ -120,7 +120,6 @@ class Encoder(nn.Module):
             nn.Conv2d(self.config.depth * 1, self.config.depth * 2, self.config.kernel_size, self.config.stride),       activation,
             nn.Conv2d(self.config.depth * 2, self.config.depth * 4, self.config.kernel_size, self.config.stride),       activation,
             nn.Conv2d(self.config.depth * 4, self.config.depth * 8, self.config.kernel_size, self.config.stride),       activation)
-        self.network.apply(initialize_weights)
 
     def forward(self, x):
         return horizontal_forward(self.network, x, input_shape=self.observation_shape)
@@ -147,7 +146,6 @@ class Decoder(nn.Module):
             nn.ConvTranspose2d(self.config.depth * 2, self.config.depth * 1, self.config.kernel_size + 1, self.config.stride),
             activation,
             nn.ConvTranspose2d(self.config.depth * 1, self.observation_shape[0], self.config.kernel_size + 1, self.config.stride))
-        self.network.apply(initialize_weights)
 
     def forward(self, posterior, deterministic):
         x = horizontal_forward(self.network, posterior, deterministic, output_shape=self.observation_shape)
@@ -155,16 +153,16 @@ class Decoder(nn.Module):
         return dist
     
 class Actor(nn.Module):
-    def __init__(self, discrete_action_bool, action_size, config):
+    def __init__(self, discrete_action_bool, actionSize, config):
         super().__init__()
         self.config = config.agent.actor
         self.discrete_action_bool = discrete_action_bool
         self.latentSize = config.latentSize
         self.recurrentSize = config.recurrentSize
 
-        action_size = action_size if discrete_action_bool else 2 * action_size
+        actionSize = actionSize if discrete_action_bool else 2 * actionSize
 
-        self.network = build_network(self.latentSize + self.recurrentSize, self.config.hidden_size, self.config.num_layers, self.config.activation, action_size)
+        self.network = sequentialModel1D(self.latentSize + self.recurrentSize, [self.config.hiddenSize]*self.config.numLayers, actionSize, self.config.activation)
 
     def forward(self, posterior, deterministic):
         x = torch.cat((posterior, deterministic), -1)
@@ -185,7 +183,7 @@ class Critic(nn.Module):
         self.latentSize = config.latentSize
         self.recurrentSize = config.recurrentSize
 
-        self.network = build_network(self.latentSize + self.recurrentSize, self.config.hidden_size, self.config.num_layers, self.config.activation, 1)
+        self.network = sequentialModel1D(self.latentSize + self.recurrentSize, [self.config.hiddenSize]*self.config.numLayers, 1, self.config.activation)
 
     def forward(self, posterior, deterministic):
         x = horizontal_forward(self.network, posterior, deterministic, output_shape=(1,))
