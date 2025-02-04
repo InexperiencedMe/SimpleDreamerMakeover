@@ -4,7 +4,7 @@ import numpy as np
 import cv2 as cv
 import os
 
-from networks import RSSM, RewardModel, ContinueModel, Encoder, Decoder, Actor, Critic
+from networks import RecurrentModel, PriorNet, PosteriorNet, RewardModel, ContinueModel, Encoder, Decoder, Actor, Critic
 
 from utils import computeLambdaValues, create_normal_dist
 from buffer import ReplayBuffer
@@ -22,7 +22,9 @@ class Dreamer:
 
         self.encoder = Encoder(observationShape, config).to(self.device)
         self.decoder = Decoder(observationShape, config).to(self.device)
-        self.worldModel = RSSM(actionSize, config, device).to(self.device)
+        self.recurrentModel = RecurrentModel(actionSize, config).to(self.device)
+        self.priorNet = PriorNet(config).to(self.device)
+        self.posteriorNet = PosteriorNet(config).to(self.device)
         self.rewardPredictor = RewardModel(fullstateSize, config).to(self.device)
         if config.useContinuationPrediction:
             self.continuePredictor = ContinueModel(fullstateSize, config).to(self.device)
@@ -31,7 +33,8 @@ class Dreamer:
         self.buffer = ReplayBuffer(observationShape, actionSize, config, self.device)
 
 
-        self.worldModelParameters = (list(self.encoder.parameters()) + list(self.decoder.parameters()) + list(self.worldModel.parameters()) + list(self.rewardPredictor.parameters()))
+        self.worldModelParameters = (list(self.encoder.parameters()) + list(self.decoder.parameters()) + list(self.recurrentModel.parameters()) +
+                                     list(self.priorNet.parameters()) + list(self.posteriorNet.parameters()) + list(self.rewardPredictor.parameters()))
         if self.config.useContinuationPrediction:
             self.worldModelParameters += list(self.continuePredictor.parameters())
 
@@ -45,13 +48,13 @@ class Dreamer:
 
     def worldModelTraining(self, data):
         data.encodedObservation = self.encoder(data.observation)
-        previousLatentState, previousRecurrentState = self.worldModel.recurrentModelInitialInput(len(data.action))
+        previousLatentState, previousRecurrentState = torch.zeros(len(data.action), self.config.latentSize, device=self.device), torch.zeros(len(data.action), self.config.recurrentSize, device=self.device)
 
         priors, priorDistributionsMeans, priorDistributionsStds, posteriors, posteriorDistributionsMeans, posteriorDistributionsStds, recurrentStates = [], [], [], [], [], [], []
         for t in range(1, self.config.batchLength):
-            recurrentState = self.worldModel.recurrentModel(previousLatentState, data.action[:, t-1], previousRecurrentState)
-            priorDistribution, prior = self.worldModel.priorNet(recurrentState)
-            posteriorDistribution, posterior = self.worldModel.posteriorNet(data.encodedObservation[:, t], recurrentState)
+            recurrentState = self.recurrentModel(previousLatentState, data.action[:, t-1], previousRecurrentState)
+            priorDistribution, prior = self.priorNet(recurrentState)
+            posteriorDistribution, posterior = self.posteriorNet(data.encodedObservation[:, t], recurrentState)
 
             priors.append(prior)
             priorDistributionsMeans.append(priorDistribution.mean)
@@ -108,8 +111,8 @@ class Dreamer:
         latentStates, recurrentStates = [], []
         for _ in range(self.config.imaginationHorizon):
             action = self.actor(latentState, recurrentState)
-            recurrentState = self.worldModel.recurrentModel(latentState, action, recurrentState)
-            _, latentState = self.worldModel.priorNet(recurrentState)
+            recurrentState = self.recurrentModel(latentState, action, recurrentState)
+            _, latentState = self.priorNet(recurrentState)
 
             latentStates.append(latentState)
             recurrentStates.append(recurrentState)
@@ -147,7 +150,7 @@ class Dreamer:
     def environmentInteraction(self, env, numEpisodes, seed=0, evaluation=False, saveVideo=False, filename="videos/unnamedVideo", fps=30, macroBlockSize=16):
         scores = []
         for i in range(numEpisodes):
-            posterior, recurrentState = self.worldModel.recurrentModelInitialInput(1)
+            posterior, recurrentState = torch.zeros(1, self.config.latentSize, device=self.device), torch.zeros(1, self.config.recurrentSize, device=self.device)
             action = torch.zeros(1, self.actionSize).to(self.device)
 
             observation = env.reset(seed=seed + self.totalEpisodes)
@@ -155,8 +158,8 @@ class Dreamer:
 
             currentScore, stepCount, done, frames = 0, 0, False, []
             while not done:
-                recurrentState = self.worldModel.recurrentModel(posterior, action, recurrentState)
-                _, posterior   = self.worldModel.posteriorNet(encodedObservation.reshape(1, -1), recurrentState)
+                recurrentState = self.recurrentModel(posterior, action, recurrentState)
+                _, posterior   = self.posteriorNet(encodedObservation.reshape(1, -1), recurrentState)
                 action         = self.actor(posterior, recurrentState).detach()
 
                 if self.discreteActionBool:
@@ -204,8 +207,9 @@ class Dreamer:
         checkpoint = {
             'encoder'               : self.encoder.state_dict(),
             'decoder'               : self.decoder.state_dict(),
-            'worldModel'            : self.worldModel.state_dict(),
-            'rewardPredictor'       : self.rewardPredictor.state_dict(),
+            'recurrentModel'        : self.recurrentModel.state_dict(),
+            'priorNet'              : self.priorNet.state_dict(),
+            'posteriorNet'          : self.posteriorNet.state_dict(),
             'actor'                 : self.actor.state_dict(),
             'critic'                : self.critic.state_dict(),
             'worldModelOptimizer'   : self.worldModelOptimizer.state_dict(),
@@ -227,7 +231,9 @@ class Dreamer:
         checkpoint = torch.load(checkpointPath, map_location=self.device)
         self.encoder.load_state_dict(checkpoint['encoder'])
         self.decoder.load_state_dict(checkpoint['decoder'])
-        self.worldModel.load_state_dict(checkpoint['worldModel'])
+        self.recurrentModel.load_state_dict(checkpoint['recurrentModel'])
+        self.priorNet.load_state_dict(checkpoint['priorNet'])
+        self.posteriorNet.load_state_dict(checkpoint['posteriorNet'])
         self.rewardPredictor.load_state_dict(checkpoint['rewardPredictor'])
         self.actor.load_state_dict(checkpoint['actor'])
         self.critic.load_state_dict(checkpoint['critic'])

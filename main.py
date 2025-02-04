@@ -42,14 +42,14 @@ def main(configFile):
             if dreamer.totalGradientSteps % config.checkpointInterval == 0 and config.saveCheckpoints:
                 suffix = f"{dreamer.totalGradientSteps/1000:.0f}k"
                 dreamer.saveCheckpoint(f"{checkpointFilenameBase}_{suffix}")
-                plotMetrics(f"{metricsFilename}", savePath=f"{plotFilename}")
                 evaluationScore = dreamer.environmentInteraction(envEvaluation, config.numEvaluationEpisodes, seed=config.seed, evaluation=True, saveVideo=True, filename=f"{videoFilenameBase}_{suffix}")
                 print(f"Saved Checkpoint and Video at {suffix:>6} gradient steps. Evaluation score: {evaluationScore:>8.2f}")
 
         mostRecentScore = dreamer.environmentInteraction(env, config.numInteractionEpisodes, seed=config.seed)
-        if config.safeMetrics:
+        if config.saveMetrics:
             metricsBase = {"envSteps": dreamer.totalEnvSteps, "gradientSteps": dreamer.totalGradientSteps, "totalReward" : mostRecentScore}
             saveLossesToCSV(metricsFilename, metricsBase | worldModelMetrics | actorCriticMetrics)
+            plotMetrics(f"{metricsFilename}", savePath=f"{plotFilename}")
 
 
 if __name__ == "__main__":

@@ -1,19 +1,19 @@
 environmentName: CarRacing-v3
-runName: remadeActor
+runName: noRSSM
 seed: 1
 
 # total gradients steps will be iterations * replayRatio
 iterationsNum: 100
 replayRatio: 100
 saveMetrics: True        # Saves metrics at replayRatio interval
-saveCheckpoints: False
+saveCheckpoints: True
 checkpointInterval: 2000
 resume: False
 checkpointToLoad: 2k
 
 episodesBeforeStart: 2
 numInteractionEpisodes: 1
-numEvaluationEpisodes: 3
+numEvaluationEpisodes: 1
 
 dreamer:
     batchSize: 32
@@ -50,22 +50,21 @@ dreamer:
         kernel_size: 5
         activation: ReLU
 
-    rssm:
-        recurrentModel: 
-            hiddenSize: 200
-            activation: ELU
+    recurrentModel: 
+        hiddenSize: 200
+        activation: ELU
 
-        priorNet: 
-            hiddenSize: 200
-            numLayers: 2
-            activation: ELU
-            min_std: 0.1
+    priorNet: 
+        hiddenSize: 200
+        numLayers: 2
+        activation: ELU
+        min_std: 0.1
 
-        posteriorNet:
-            hiddenSize: 200
-            numLayers: 2
-            activation: ELU
-            min_std: 0.1
+    posteriorNet:
+        hiddenSize: 200
+        numLayers: 2
+        activation: ELU
+        min_std: 0.1
         
     reward:
         hiddenSize: 400

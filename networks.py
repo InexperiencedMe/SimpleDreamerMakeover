@@ -6,25 +6,12 @@ from torch.distributions import Normal, TanhTransform, Bernoulli
 from utils import create_normal_dist, sequentialModel1D, horizontal_forward
 
 
-# Needs to go. Take out recurrent, prior, posterior
-class RSSM(nn.Module):
-    def __init__(self, actionSize, config, device):
-        super().__init__()
-        self.config = config.rssm
-        self.device = device
-
-        self.recurrentModel = RecurrentModel(actionSize, config)
-        self.priorNet = PriorNet(config)
-        self.posteriorNet = PosteriorNet(config)
-
-    def recurrentModelInitialInput(self, batchSize):
-        return self.priorNet.initialInput(batchSize).to(self.device), self.recurrentModel.initialInput(batchSize).to(self.device)
 
 # Needs a remake
 class RecurrentModel(nn.Module):
     def __init__(self, actionSize, config):
         super().__init__()
-        self.config = config.rssm.recurrentModel
+        self.config = config.recurrentModel
         self.latentSize = config.latentSize
         self.recurrentSize = config.recurrentSize
 
@@ -33,20 +20,20 @@ class RecurrentModel(nn.Module):
         self.linear = nn.Linear(self.latentSize + actionSize, self.config.hiddenSize)
         self.recurrent = nn.GRUCell(self.config.hiddenSize, self.recurrentSize)
 
-    def forward(self, embedded_state, action, deterministic):
-        x = torch.cat((embedded_state, action), 1)
+    def forward(self, latentState, action, recurrentState):
+        x = torch.cat((latentState, action), 1)
         x = self.activation(self.linear(x))
-        x = self.recurrent(x, deterministic)
+        x = self.recurrent(x, recurrentState)
         return x
 
-    def initialInput(self, batchSize):
+    def initialOutput(self, batchSize):
         return torch.zeros(batchSize, self.recurrentSize)
 
 # Needs a remake
 class PriorNet(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.config = config.rssm.priorNet
+        self.config = config.priorNet
         self.latentSize = config.latentSize
         self.recurrentSize = config.recurrentSize
 
@@ -58,22 +45,22 @@ class PriorNet(nn.Module):
         prior = prior_dist.rsample()
         return prior_dist, prior
 
-    def initialInput(self, batchSize):
+    def initialOutput(self, batchSize):
         return torch.zeros(batchSize, self.latentSize)
 
 # Needs a remake
-class PosteriorNet(nn.Module):
+class PosteriorNet(nn.Module,):
     def __init__(self, config):
         super().__init__()
-        self.config = config.rssm.posteriorNet
+        self.config = config.posteriorNet
         self.encodedObservationSize = config.encodedObservationSize
         self.latentSize = config.latentSize
         self.recurrentSize = config.recurrentSize
 
         self.network = sequentialModel1D(self.encodedObservationSize + self.recurrentSize, [self.config.hiddenSize]*self.config.numLayers, self.latentSize*2, self.config.activation)
 
-    def forward(self, embedded_observation, deterministic):
-        x = self.network(torch.cat((embedded_observation, deterministic), 1))
+    def forward(self, embedded_observation, recurrentState):
+        x = self.network(torch.cat((embedded_observation, recurrentState), 1))
         posterior_dist = create_normal_dist(x, min_std=self.config.min_std)
         posterior = posterior_dist.rsample()
         return posterior_dist, posterior
@@ -142,8 +129,8 @@ class Decoder(nn.Module):
             activation,
             nn.ConvTranspose2d(self.config.depth * 1, self.observation_shape[0], self.config.kernel_size + 1, self.config.stride))
 
-    def forward(self, posterior, deterministic):
-        x = horizontal_forward(self.network, posterior, deterministic, output_shape=self.observation_shape)
+    def forward(self, posterior, recurrentState):
+        x = horizontal_forward(self.network, posterior, recurrentState, output_shape=self.observation_shape)
         dist = create_normal_dist(x, std=1, event_shape=len(self.observation_shape))
         return dist
 
@@ -161,8 +148,8 @@ class Actor(nn.Module):
 
         self.network = sequentialModel1D(self.latentSize + self.recurrentSize, [self.config.hiddenSize]*self.config.numLayers, actionSize, self.config.activation)
 
-    def forward(self, posterior, deterministic):
-        x = torch.cat((posterior, deterministic), -1)
+    def forward(self, posterior, recurrentState):
+        x = torch.cat((posterior, recurrentState), -1)
         x = self.network(x)
         if self.discrete_action_bool:
             dist = torch.distributions.OneHotCategorical(logits=x)
