@@ -90,48 +90,43 @@ class ContinueModel(nn.Module):
 
 # Needs a remake
 class Encoder(nn.Module):
-    def __init__(self, observation_shape, config):
+    def __init__(self, observationShape, config):
         super().__init__()
         self.config = config.encoder
 
         activation = getattr(nn, self.config.activation)()
-        self.observation_shape = observation_shape
+        self.observationShape = observationShape
 
         self.network = nn.Sequential(
-            nn.Conv2d(self.observation_shape[0], self.config.depth * 1, self.config.kernel_size, self.config.stride),   activation,
-            nn.Conv2d(self.config.depth * 1, self.config.depth * 2, self.config.kernel_size, self.config.stride),       activation,
-            nn.Conv2d(self.config.depth * 2, self.config.depth * 4, self.config.kernel_size, self.config.stride),       activation,
-            nn.Conv2d(self.config.depth * 4, self.config.depth * 8, self.config.kernel_size, self.config.stride),       activation)
+            nn.Conv2d(self.observationShape[0], self.config.depth*1, self.config.kernel_size, self.config.stride),    activation,
+            nn.Conv2d(self.config.depth*1, self.config.depth*2, self.config.kernel_size, self.config.stride),       activation,
+            nn.Conv2d(self.config.depth*2, self.config.depth*4, self.config.kernel_size, self.config.stride),       activation,
+            nn.Conv2d(self.config.depth*4, self.config.depth*8, self.config.kernel_size, self.config.stride),       activation)
 
     def forward(self, x):
-        return horizontal_forward(self.network, x, input_shape=self.observation_shape)
+        return horizontal_forward(self.network, x, input_shape=self.observationShape)
 
 # Needs a remake
 class Decoder(nn.Module):
-    def __init__(self, observation_shape, config):
+    def __init__(self, inputSize, observationShape, config):
         super().__init__()
+        self.inputSize = inputSize
+        self.observationShape = observationShape
         self.config = config.decoder
-        self.latentSize = config.latentSize
-        self.recurrentSize = config.recurrentSize
-
         activation = getattr(nn, self.config.activation)()
-        self.observation_shape = observation_shape
 
         self.network = nn.Sequential(
-            nn.Linear(self.recurrentSize + self.latentSize, self.config.depth * 32),
-            nn.Unflatten(1, (self.config.depth * 32, 1)),
+            nn.Linear(inputSize, self.config.depth*32),
+            nn.Unflatten(1, (self.config.depth*32, 1)),
             nn.Unflatten(2, (1, 1)),
-            nn.ConvTranspose2d(self.config.depth * 32, self.config.depth * 4, self.config.kernel_size, self.config.stride),
-            activation,
-            nn.ConvTranspose2d(self.config.depth * 4, self.config.depth * 2, self.config.kernel_size, self.config.stride),
-            activation,
-            nn.ConvTranspose2d(self.config.depth * 2, self.config.depth * 1, self.config.kernel_size + 1, self.config.stride),
-            activation,
-            nn.ConvTranspose2d(self.config.depth * 1, self.observation_shape[0], self.config.kernel_size + 1, self.config.stride))
+            nn.ConvTranspose2d(self.config.depth*32, self.config.depth*4, self.config.kernel_size, self.config.stride),         activation,
+            nn.ConvTranspose2d(self.config.depth*4, self.config.depth*2, self.config.kernel_size, self.config.stride),          activation,
+            nn.ConvTranspose2d(self.config.depth*2, self.config.depth*1, self.config.kernel_size + 1, self.config.stride),      activation,
+            nn.ConvTranspose2d(self.config.depth*1, self.observationShape[0], self.config.kernel_size + 1, self.config.stride))
 
-    def forward(self, posterior, recurrentState):
-        x = horizontal_forward(self.network, posterior, recurrentState, output_shape=self.observation_shape)
-        dist = create_normal_dist(x, std=1, event_shape=len(self.observation_shape))
+    def forward(self, x):
+        x = horizontal_forward(self.network, x, input_shape=(self.inputSize,), output_shape=self.observationShape)
+        dist = create_normal_dist(x, std=1, event_shape=len(self.observationShape))
         return dist
 
 

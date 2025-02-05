@@ -127,7 +127,7 @@ def horizontal_forward(network, x, y=None, input_shape=(-1,), output_shape=(-1,)
         batch_with_horizon_shape = (1,)
     if y is not None:
         x = torch.cat((x, y), -1)
-        input_shape = (x.shape[-1],)  #
+        input_shape = (x.shape[-1],)
     x = x.reshape(-1, *input_shape)
     x = network(x)
 

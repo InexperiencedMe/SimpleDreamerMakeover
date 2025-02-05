@@ -1,5 +1,5 @@
 environmentName: CarRacing-v3
-runName: noRSSM
+runName: fullstates
 seed: 1
 
 # total gradients steps will be iterations * replayRatio

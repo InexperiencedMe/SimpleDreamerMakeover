@@ -18,18 +18,19 @@ class Dreamer:
         self.discreteActionBool = discreteActionBool
         self.config = config
 
-        fullstateSize = config.recurrentSize + config.latentSize
+        fullStateSize = config.recurrentSize + config.latentSize
 
+        # Specific configs should be passed. All else should be passed as other arguments, like input and output sizes
         self.encoder = Encoder(observationShape, config).to(self.device)
-        self.decoder = Decoder(observationShape, config).to(self.device)
+        self.decoder = Decoder(fullStateSize, observationShape, config).to(self.device)
         self.recurrentModel = RecurrentModel(actionSize, config).to(self.device)
         self.priorNet = PriorNet(config).to(self.device)
         self.posteriorNet = PosteriorNet(config).to(self.device)
-        self.rewardPredictor = RewardModel(fullstateSize, config).to(self.device)
+        self.rewardPredictor = RewardModel(fullStateSize, config).to(self.device)
         if config.useContinuationPrediction:
-            self.continuePredictor = ContinueModel(fullstateSize, config).to(self.device)
+            self.continuePredictor = ContinueModel(fullStateSize, config).to(self.device)
         self.actor = Actor(discreteActionBool, actionSize, config).to(self.device)
-        self.critic = Critic(fullstateSize, config).to(self.device)
+        self.critic = Critic(fullStateSize, config).to(self.device)
         self.buffer = ReplayBuffer(observationShape, actionSize, config, self.device)
 
 
@@ -67,18 +68,19 @@ class Dreamer:
             previousLatentState = posterior
             previousRecurrentState = recurrentState
 
-        priors                      = torch.stack(priors, dim=1)
-        priorDistributionsMeans     = torch.stack(priorDistributionsMeans, dim=1)
-        priorDistributionsStds      = torch.stack(priorDistributionsStds, dim=1)
-        posteriors                  = torch.stack(posteriors, dim=1)
-        posteriorDistributionsMeans = torch.stack(posteriorDistributionsMeans, dim=1)
-        posteriorDistributionsStds  = torch.stack(posteriorDistributionsStds, dim=1)
-        recurrentStates             = torch.stack(recurrentStates, dim=1)
+        priors                      = torch.stack(priors,                       dim=1)
+        priorDistributionsMeans     = torch.stack(priorDistributionsMeans,      dim=1)
+        priorDistributionsStds      = torch.stack(priorDistributionsStds,       dim=1)
+        posteriors                  = torch.stack(posteriors,                   dim=1)
+        posteriorDistributionsMeans = torch.stack(posteriorDistributionsMeans,  dim=1)
+        posteriorDistributionsStds  = torch.stack(posteriorDistributionsStds,   dim=1)
+        recurrentStates             = torch.stack(recurrentStates,              dim=1)
+        fullStates                  = torch.cat((posteriors, recurrentStates), dim=-1)
 
-        reconstructedObservationsDistributions  =  self.decoder(posteriors, recurrentStates)
+        reconstructedObservationsDistributions  =  self.decoder(fullStates)
         reconstructionLoss                      = -reconstructedObservationsDistributions.log_prob(data.observation[:, 1:]).mean()
 
-        rewardDistribution  =  self.rewardPredictor(torch.cat((posteriors, recurrentStates), -1))
+        rewardDistribution  =  self.rewardPredictor(fullStates)
         rewardLoss          = -rewardDistribution.log_prob(data.reward[:, 1:]).mean()
 
         priorDistribution     = create_normal_dist(priorDistributionsMeans, priorDistributionsStds, event_shape=1)
@@ -88,7 +90,7 @@ class Dreamer:
 
         worldModelLoss = klLoss + reconstructionLoss + rewardLoss
         if self.config.useContinuationPrediction:
-            continueDistribution = self.continuePredictor(torch.cat((posteriors, recurrentStates), -1))
+            continueDistribution = self.continuePredictor(fullStates)
             continueLoss         = nn.BCELoss(continueDistribution.probs, 1 - data.done[:, 1:])
             worldModelLoss      += continueLoss.mean()
 
@@ -108,21 +110,18 @@ class Dreamer:
 
     def behaviorTraining(self, latentState, recurrentState):
         # fullStates = [] # TODO: Make nets work on fullstates, dont concatenate inside nets
-        latentStates, recurrentStates = [], []
+        fullStates = []
         for _ in range(self.config.imaginationHorizon):
             action = self.actor(latentState, recurrentState)
             recurrentState = self.recurrentModel(latentState, action, recurrentState)
             _, latentState = self.priorNet(recurrentState)
 
-            latentStates.append(latentState)
-            recurrentStates.append(recurrentState)
-
-        latentStates    = torch.stack(latentStates,    dim=1)
-        recurrentStates = torch.stack(recurrentStates, dim=1)
+            fullStates.append(torch.cat((latentState, recurrentState), -1))
+        fullStates = torch.stack(fullStates, dim=1)
         
-        predictedRewards = self.rewardPredictor(torch.cat((latentStates, recurrentStates), -1)).mean
-        values           = self.critic(torch.cat((latentStates, recurrentStates), -1)).mean
-        continues        = self.continuePredictor(latentStates, recurrentStates).mean if self.config.useContinuationPrediction else self.config.discount*torch.ones_like(values)
+        predictedRewards = self.rewardPredictor(fullStates).mean
+        values           = self.critic(fullStates).mean
+        continues        = self.continuePredictor(fullStates).mean if self.config.useContinuationPrediction else self.config.discount*torch.ones_like(values)
         lambdaValues     = computeLambdaValues(predictedRewards, values, continues, self.config.imaginationHorizon, self.device, self.config.lambda_)
 
         actorLoss        = -torch.mean(lambdaValues)
@@ -132,7 +131,7 @@ class Dreamer:
         nn.utils.clip_grad_norm_(self.actor.parameters(), self.config.gradientClip, norm_type=self.config.gradientNormType)
         self.actorOptimizer.step()
 
-        valueDistributions  =  self.critic(torch.cat((latentStates.detach()[:, :-1], recurrentStates.detach()[:, :-1]), -1))
+        valueDistributions  =  self.critic(fullStates[:, :-1].detach())
         criticLoss          = -torch.mean(valueDistributions.log_prob(lambdaValues.detach()))
 
         self.criticOptimizer.zero_grad()
