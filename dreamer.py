@@ -20,18 +20,18 @@ class Dreamer:
 
         fullStateSize = config.recurrentSize + config.latentSize
 
-        # Specific configs should be passed. All else should be passed as other arguments, like input and output sizes
-        self.encoder = Encoder(observationShape, config).to(self.device)
-        self.decoder = Decoder(fullStateSize, observationShape, config).to(self.device)
-        self.recurrentModel = RecurrentModel(actionSize, config).to(self.device)
-        self.priorNet = PriorNet(config).to(self.device)
-        self.posteriorNet = PosteriorNet(config).to(self.device)
-        self.rewardPredictor = RewardModel(fullStateSize, config).to(self.device)
+        self.actor           = Actor(fullStateSize, actionSize, discreteActionBool,                             config.actor          ).to(self.device)
+        self.critic          = Critic(fullStateSize,                                                            config.critic         ).to(self.device)
+        self.encoder         = Encoder(observationShape,                                                        config.encoder        ).to(self.device) # Should have output size
+        self.decoder         = Decoder(fullStateSize, observationShape,                                         config.decoder        ).to(self.device)
+        self.recurrentModel  = RecurrentModel(config.recurrentSize, config.latentSize, actionSize,              config.recurrentModel ).to(self.device)
+        self.priorNet        = PriorNet(config.recurrentSize, config.latentSize,                                config.priorNet       ).to(self.device)
+        self.posteriorNet    = PosteriorNet(config.recurrentSize + config.encodedObsSize, config.latentSize,    config.posteriorNet   ).to(self.device)
+        self.rewardPredictor = RewardModel(fullStateSize,                                                       config.reward         ).to(self.device)
         if config.useContinuationPrediction:
-            self.continuePredictor = ContinueModel(fullStateSize, config).to(self.device)
-        self.actor = Actor(discreteActionBool, actionSize, config).to(self.device)
-        self.critic = Critic(fullStateSize, config).to(self.device)
-        self.buffer = ReplayBuffer(observationShape, actionSize, config, self.device)
+            self.continuePredictor  = ContinueModel(fullStateSize,                                              config.continuation   ).to(self.device)
+
+        self.buffer = ReplayBuffer(observationShape, actionSize, config, device)
 
 
         self.worldModelParameters = (list(self.encoder.parameters()) + list(self.decoder.parameters()) + list(self.recurrentModel.parameters()) +

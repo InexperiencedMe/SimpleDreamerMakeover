@@ -9,16 +9,14 @@ from utils import create_normal_dist, sequentialModel1D, horizontal_forward
 
 # Needs a remake
 class RecurrentModel(nn.Module):
-    def __init__(self, actionSize, config):
+    def __init__(self, recurrentSize, latentSize, actionSize, config):
         super().__init__()
-        self.config = config.recurrentModel
-        self.latentSize = config.latentSize
-        self.recurrentSize = config.recurrentSize
+        self.config = config
 
         self.activation = getattr(nn, self.config.activation)()
 
-        self.linear = nn.Linear(self.latentSize + actionSize, self.config.hiddenSize)
-        self.recurrent = nn.GRUCell(self.config.hiddenSize, self.recurrentSize)
+        self.linear = nn.Linear(latentSize + actionSize, self.config.hiddenSize)
+        self.recurrent = nn.GRUCell(self.config.hiddenSize, recurrentSize)
 
     def forward(self, latentState, action, recurrentState):
         x = torch.cat((latentState, action), 1)
@@ -26,18 +24,13 @@ class RecurrentModel(nn.Module):
         x = self.recurrent(x, recurrentState)
         return x
 
-    def initialOutput(self, batchSize):
-        return torch.zeros(batchSize, self.recurrentSize)
 
 # Needs a remake
 class PriorNet(nn.Module):
-    def __init__(self, config):
+    def __init__(self, inputSize, outputSize, config):
         super().__init__()
-        self.config = config.priorNet
-        self.latentSize = config.latentSize
-        self.recurrentSize = config.recurrentSize
-
-        self.network = sequentialModel1D(self.recurrentSize, [self.config.hiddenSize]*self.config.numLayers, self.latentSize*2, self.config.activation)
+        self.config = config
+        self.network = sequentialModel1D(inputSize, [self.config.hiddenSize]*self.config.numLayers, outputSize*2, self.config.activation)
 
     def forward(self, x):
         x = self.network(x)
@@ -45,22 +38,16 @@ class PriorNet(nn.Module):
         prior = prior_dist.rsample()
         return prior_dist, prior
 
-    def initialOutput(self, batchSize):
-        return torch.zeros(batchSize, self.latentSize)
 
 # Needs a remake
 class PosteriorNet(nn.Module,):
-    def __init__(self, config):
+    def __init__(self, inputSize, outputSize, config):
         super().__init__()
-        self.config = config.posteriorNet
-        self.encodedObservationSize = config.encodedObservationSize
-        self.latentSize = config.latentSize
-        self.recurrentSize = config.recurrentSize
+        self.config = config
+        self.network = sequentialModel1D(inputSize, [self.config.hiddenSize]*self.config.numLayers, outputSize*2, self.config.activation)
 
-        self.network = sequentialModel1D(self.encodedObservationSize + self.recurrentSize, [self.config.hiddenSize]*self.config.numLayers, self.latentSize*2, self.config.activation)
-
-    def forward(self, embedded_observation, recurrentState):
-        x = self.network(torch.cat((embedded_observation, recurrentState), 1))
+    def forward(self, encodedObservation, recurrentState):
+        x = self.network(torch.cat((encodedObservation, recurrentState), 1))
         posterior_dist = create_normal_dist(x, min_std=self.config.min_std)
         posterior = posterior_dist.rsample()
         return posterior_dist, posterior
@@ -70,7 +57,7 @@ class PosteriorNet(nn.Module,):
 class RewardModel(nn.Module):
     def __init__(self, inputSize, config):
         super().__init__()
-        self.config = config.reward
+        self.config = config
         self.network = sequentialModel1D(inputSize, [self.config.hiddenSize]*self.config.numLayers, 2, self.config.activation)
 
     def forward(self, x):
@@ -82,7 +69,7 @@ class RewardModel(nn.Module):
 class ContinueModel(nn.Module):
     def __init__(self, inputSize, config):
         super().__init__()
-        self.config = config.continue_
+        self.config = config
         self.network = sequentialModel1D(inputSize, [self.config.hiddenSize]*self.config.numLayers, 1, self.config.activation)
 
     def forward(self, x):
@@ -92,7 +79,7 @@ class ContinueModel(nn.Module):
 class Encoder(nn.Module):
     def __init__(self, observationShape, config):
         super().__init__()
-        self.config = config.encoder
+        self.config = config
 
         activation = getattr(nn, self.config.activation)()
         self.observationShape = observationShape
@@ -112,7 +99,7 @@ class Decoder(nn.Module):
         super().__init__()
         self.inputSize = inputSize
         self.observationShape = observationShape
-        self.config = config.decoder
+        self.config = config
         activation = getattr(nn, self.config.activation)()
 
         self.network = nn.Sequential(
@@ -132,21 +119,17 @@ class Decoder(nn.Module):
 
 # Needs a remake
 class Actor(nn.Module):
-    def __init__(self, discrete_action_bool, actionSize, config):
+    def __init__(self, inputSize, actionSize, discreteActionBool, config):
         super().__init__()
-        self.config = config.agent.actor
-        self.discrete_action_bool = discrete_action_bool
-        self.latentSize = config.latentSize
-        self.recurrentSize = config.recurrentSize
-
-        actionSize = actionSize if discrete_action_bool else 2 * actionSize
-
-        self.network = sequentialModel1D(self.latentSize + self.recurrentSize, [self.config.hiddenSize]*self.config.numLayers, actionSize, self.config.activation)
+        self.config = config
+        self.discreteActionBool = discreteActionBool
+        actionSize = actionSize if discreteActionBool else 2 * actionSize
+        self.network = sequentialModel1D(inputSize, [self.config.hiddenSize]*self.config.numLayers, actionSize, self.config.activation)
 
     def forward(self, posterior, recurrentState):
         x = torch.cat((posterior, recurrentState), -1)
         x = self.network(x)
-        if self.discrete_action_bool:
+        if self.discreteActionBool:
             dist = torch.distributions.OneHotCategorical(logits=x)
             action = dist.sample() + dist.probs - dist.probs.detach()
         else:
@@ -160,7 +143,7 @@ class Actor(nn.Module):
 class Critic(nn.Module):
     def __init__(self, inputSize, config):
         super().__init__()
-        self.config = config.agent.critic
+        self.config = config
         self.network = sequentialModel1D(inputSize, [self.config.hiddenSize]*self.config.numLayers, 2, self.config.activation)
 
     def forward(self, x):

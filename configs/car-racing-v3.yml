@@ -1,5 +1,5 @@
 environmentName: CarRacing-v3
-runName: fullstates
+runName: newConfigs
 seed: 1
 
 # total gradients steps will be iterations * replayRatio
@@ -7,7 +7,7 @@ iterationsNum: 100
 replayRatio: 100
 saveMetrics: True        # Saves metrics at replayRatio interval
 saveCheckpoints: True
-checkpointInterval: 2000
+checkpointInterval: 1000
 resume: False
 checkpointToLoad: 2k
 
@@ -33,7 +33,7 @@ dreamer:
 
     recurrentSize: 600
     latentSize: 600 # Exchange for length and size
-    encodedObservationSize: 1024 #FIXME: You can't just modify it
+    encodedObsSize: 1024 #FIXME: You can't just modify it
 
     buffer:
         capacity: 50000
@@ -71,24 +71,23 @@ dreamer:
         numLayers: 2
         activation: ELU
 
-    continue_:
+    continuation:
         hiddenSize: 400
         numLayers: 3
         activation: ELU
     
-    agent:
-        actor:
-            hiddenSize: 400
-            min_std: 0.0001
-            init_std: 5.
-            mean_scale: 5
-            activation: ELU
-            numLayers: 2
+    actor:
+        hiddenSize: 400
+        min_std: 0.0001
+        init_std: 5.
+        mean_scale: 5
+        activation: ELU
+        numLayers: 2
 
-        critic: 
-            hiddenSize: 400
-            activation: ELU
-            numLayers: 3 
+    critic: 
+        hiddenSize: 400
+        activation: ELU
+        numLayers: 3 
 
 folderNames:
     metricsFolder: metrics
