@@ -53,7 +53,7 @@ class Dreamer:
 
         priors, priorDistributionsMeans, priorDistributionsStds, posteriors, posteriorDistributionsMeans, posteriorDistributionsStds, recurrentStates = [], [], [], [], [], [], []
         for t in range(1, self.config.batchLength):
-            recurrentState = self.recurrentModel(previousLatentState, data.action[:, t-1], previousRecurrentState)
+            recurrentState = self.recurrentModel(previousRecurrentState, previousLatentState, data.action[:, t-1])
             priorDistribution, prior = self.priorNet(recurrentState)
             posteriorDistribution, posterior = self.posteriorNet(data.encodedObservation[:, t], recurrentState)
 
@@ -113,7 +113,7 @@ class Dreamer:
         fullStates = []
         for _ in range(self.config.imaginationHorizon):
             action = self.actor(latentState, recurrentState)
-            recurrentState = self.recurrentModel(latentState, action, recurrentState)
+            recurrentState = self.recurrentModel(recurrentState, latentState, action)
             _, latentState = self.priorNet(recurrentState)
 
             fullStates.append(torch.cat((recurrentState, latentState), -1))
@@ -157,7 +157,7 @@ class Dreamer:
 
             currentScore, stepCount, done, frames = 0, 0, False, []
             while not done:
-                recurrentState = self.recurrentModel(posterior, action, recurrentState)
+                recurrentState = self.recurrentModel(recurrentState, posterior, action)
                 _, posterior   = self.posteriorNet(encodedObservation.reshape(1, -1), recurrentState)
                 action         = self.actor(posterior, recurrentState).detach()
 

@@ -18,8 +18,8 @@ class RecurrentModel(nn.Module):
         self.linear = nn.Linear(latentSize + actionSize, self.config.hiddenSize)
         self.recurrent = nn.GRUCell(self.config.hiddenSize, recurrentSize)
 
-    def forward(self, latentState, action, recurrentState):
-        x = torch.cat((latentState, action), 1)
+    def forward(self, recurrentState, latentState, action):
+        x = torch.cat((latentState, action), -1)
         x = self.activation(self.linear(x))
         x = self.recurrent(x, recurrentState)
         return x
