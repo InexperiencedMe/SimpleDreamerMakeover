@@ -49,7 +49,7 @@ class Dreamer:
 
     def worldModelTraining(self, data):
         data.encodedObservation = self.encoder(data.observation)
-        previousLatentState, previousRecurrentState = torch.zeros(len(data.action), self.config.latentSize, device=self.device), torch.zeros(len(data.action), self.config.recurrentSize, device=self.device)
+        previousRecurrentState, previousLatentState = torch.zeros(len(data.action), self.config.recurrentSize, device=self.device), torch.zeros(len(data.action), self.config.latentSize, device=self.device)
 
         priors, priorDistributionsMeans, priorDistributionsStds, posteriors, posteriorDistributionsMeans, posteriorDistributionsStds, recurrentStates = [], [], [], [], [], [], []
         for t in range(1, self.config.batchLength):
@@ -75,7 +75,7 @@ class Dreamer:
         posteriorDistributionsMeans = torch.stack(posteriorDistributionsMeans,  dim=1)
         posteriorDistributionsStds  = torch.stack(posteriorDistributionsStds,   dim=1)
         recurrentStates             = torch.stack(recurrentStates,              dim=1)
-        fullStates                  = torch.cat((posteriors, recurrentStates), dim=-1)
+        fullStates                  = torch.cat((recurrentStates, posteriors), dim=-1)
 
         reconstructedObservationsDistributions  =  self.decoder(fullStates)
         reconstructionLoss                      = -reconstructedObservationsDistributions.log_prob(data.observation[:, 1:]).mean()
@@ -106,9 +106,9 @@ class Dreamer:
             "rewardPredictorLoss"   : rewardLoss.item(),
             "klLoss"                : klLoss.item() - klLossShiftForGraphing}
 
-        return posteriors.detach().view(-1, self.config.latentSize), recurrentStates.detach().view(-1, self.config.recurrentSize), metrics
+        return recurrentStates.detach().view(-1, self.config.recurrentSize), posteriors.detach().view(-1, self.config.latentSize), metrics
 
-    def behaviorTraining(self, latentState, recurrentState):
+    def behaviorTraining(self, recurrentState, latentState):
         # fullStates = [] # TODO: Make nets work on fullstates, dont concatenate inside nets
         fullStates = []
         for _ in range(self.config.imaginationHorizon):
@@ -116,7 +116,7 @@ class Dreamer:
             recurrentState = self.recurrentModel(latentState, action, recurrentState)
             _, latentState = self.priorNet(recurrentState)
 
-            fullStates.append(torch.cat((latentState, recurrentState), -1))
+            fullStates.append(torch.cat((recurrentState, latentState), -1))
         fullStates = torch.stack(fullStates, dim=1)
         
         predictedRewards = self.rewardPredictor(fullStates).mean
