@@ -126,8 +126,7 @@ class Actor(nn.Module):
         actionSize = actionSize if discreteActionBool else 2 * actionSize
         self.network = sequentialModel1D(inputSize, [self.config.hiddenSize]*self.config.numLayers, actionSize, self.config.activation)
 
-    def forward(self, posterior, recurrentState):
-        x = torch.cat((posterior, recurrentState), -1)
+    def forward(self, x):
         x = self.network(x)
         if self.discreteActionBool:
             dist = torch.distributions.OneHotCategorical(logits=x)

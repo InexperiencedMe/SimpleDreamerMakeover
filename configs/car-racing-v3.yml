@@ -1,15 +1,15 @@
 environmentName: CarRacing-v3
-runName: RLA
+runName: actorOnFullStateNight
 seed: 1
 
 # total gradients steps will be iterations * replayRatio
-iterationsNum: 100
+iterationsNum: 300
 replayRatio: 100
 saveMetrics: True        # Saves metrics at replayRatio interval
 saveCheckpoints: True
 checkpointInterval: 1000
 resume: False
-checkpointToLoad: 2k
+checkpointToLoad: 20k
 
 episodesBeforeStart: 2
 numInteractionEpisodes: 1
@@ -25,7 +25,7 @@ dreamer:
     lambda_: 0.95
 
     useContinuationPrediction: False
-    actorLR: 0.00004
+    actorLR: 0.00008
     criticLR: 0.0001
     worldModelLR: 0.0002
     gradientNormType: 2

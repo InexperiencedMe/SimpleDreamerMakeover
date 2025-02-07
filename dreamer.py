@@ -109,14 +109,16 @@ class Dreamer:
         return recurrentStates.detach().view(-1, self.config.recurrentSize), posteriors.detach().view(-1, self.config.latentSize), metrics
 
     def behaviorTraining(self, recurrentState, latentState):
-        # fullStates = [] # TODO: Make nets work on fullstates, dont concatenate inside nets
+        # TODO: there should be only one argument: fullState, but it needs a full nightly run and it's not a priority
+        fullState = torch.cat((recurrentState, latentState), -1)
         fullStates = []
         for _ in range(self.config.imaginationHorizon):
-            action = self.actor(latentState, recurrentState)
+            action = self.actor(fullState)
             recurrentState = self.recurrentModel(recurrentState, latentState, action)
             _, latentState = self.priorNet(recurrentState)
 
-            fullStates.append(torch.cat((recurrentState, latentState), -1))
+            fullState = torch.cat((recurrentState, latentState), -1)
+            fullStates.append(fullState)
         fullStates = torch.stack(fullStates, dim=1)
         
         predictedRewards = self.rewardPredictor(fullStates).mean
@@ -159,7 +161,7 @@ class Dreamer:
             while not done:
                 recurrentState = self.recurrentModel(recurrentState, posterior, action)
                 _, posterior   = self.posteriorNet(encodedObservation.reshape(1, -1), recurrentState)
-                action         = self.actor(posterior, recurrentState).detach()
+                action         = self.actor(torch.cat((recurrentState, posterior), -1)).detach()
 
                 if self.discreteActionBool:
                     actionBuffered = action.cpu().numpy()
@@ -209,6 +211,7 @@ class Dreamer:
             'recurrentModel'        : self.recurrentModel.state_dict(),
             'priorNet'              : self.priorNet.state_dict(),
             'posteriorNet'          : self.posteriorNet.state_dict(),
+            'rewardPredictor'       : self.rewardPredictor.state_dict(),
             'actor'                 : self.actor.state_dict(),
             'critic'                : self.critic.state_dict(),
             'worldModelOptimizer'   : self.worldModelOptimizer.state_dict(),
