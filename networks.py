@@ -138,6 +138,29 @@ class Actor(nn.Module):
         return action
 
 
+LOG_STD_MAX = 2
+LOG_STD_MIN = -5
+class Actor2(nn.Module):
+    def __init__(self, inputSize, actionSize, device, config, actionLow=[-1], actionHigh=[1]):
+        super().__init__()
+        actionSize *= 2
+        self.config = config
+        self.network = sequentialModel1D(inputSize, [self.config.hiddenSize]*self.config.numLayers, actionSize, self.config.activation)
+        self.register_buffer("actionScale", ((torch.tensor(actionHigh, device=device) - torch.tensor(actionLow, device=device)) / 2.0))
+        self.register_buffer("actionBias", ((torch.tensor(actionHigh, device=device) + torch.tensor(actionLow, device=device)) / 2.0))
+
+
+    def forward(self, x):
+        mean, logStd = self.network(x).chunk(2, dim=-1)
+        logStd = LOG_STD_MIN + 0.5 * (LOG_STD_MAX - LOG_STD_MIN) * (logStd + 1)
+        std = torch.exp(logStd)
+        distribution = Normal(mean, std)
+        sample = distribution.rsample()
+        sampleTanh = torch.tanh(sample)
+        action = sampleTanh*self.actionScale + self.actionBias
+        return action
+
+
 # Remade
 class Critic(nn.Module):
     def __init__(self, inputSize, config):

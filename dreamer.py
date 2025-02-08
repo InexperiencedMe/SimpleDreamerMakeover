@@ -20,6 +20,7 @@ class Dreamer:
 
         fullStateSize = config.recurrentSize + config.latentSize
 
+        # self.actor           = Actor2(fullStateSize, actionSize, device, config.actor, actionHigh=[1, 1, 1], actionLow=[-1, 0, 0]).to(self.device)
         self.actor           = Actor(fullStateSize, actionSize, discreteActionBool,                             config.actor          ).to(self.device)
         self.critic          = Critic(fullStateSize,                                                            config.critic         ).to(self.device)
         self.encoder         = Encoder(observationShape,                                                        config.encoder        ).to(self.device) # Should have output size

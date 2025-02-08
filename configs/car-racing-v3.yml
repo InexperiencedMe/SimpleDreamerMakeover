@@ -1,5 +1,5 @@
 environmentName: CarRacing-v3
-runName: actorOnFullStateNight
+runName: CLEANRL_ACTOR
 seed: 1
 
 # total gradients steps will be iterations * replayRatio
