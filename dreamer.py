@@ -107,11 +107,11 @@ class Dreamer:
             "rewardPredictorLoss"   : rewardLoss.item(),
             "klLoss"                : klLoss.item() - klLossShiftForGraphing}
 
-        return recurrentStates.detach().view(-1, self.config.recurrentSize), posteriors.detach().view(-1, self.config.latentSize), metrics
+        return fullStates.view(-1, self.config.recurrentSize + self.config.latentSize).detach(), metrics
 
-    def behaviorTraining(self, recurrentState, latentState):
-        # TODO: there should be only one argument: fullState, but it needs a full nightly run and it's not a priority
-        fullState = torch.cat((recurrentState, latentState), -1)
+
+    def behaviorTraining(self, fullState):
+        recurrentState, latentState = torch.split(fullState, (self.config.recurrentSize, self.config.latentSize), -1)
         fullStates = []
         for _ in range(self.config.imaginationHorizon):
             action = self.actor(fullState)

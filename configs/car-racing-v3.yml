@@ -1,5 +1,5 @@
 environmentName: CarRacing-v3
-runName: CLEANRL_ACTOR
+runName: initialStates
 seed: 1
 
 # total gradients steps will be iterations * replayRatio
@@ -7,7 +7,7 @@ iterationsNum: 300
 replayRatio: 100
 saveMetrics: True        # Saves metrics at replayRatio interval
 saveCheckpoints: True
-checkpointInterval: 1000
+checkpointInterval: 2000
 resume: False
 checkpointToLoad: 20k
 

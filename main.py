@@ -35,8 +35,8 @@ def main(configFile):
     for _ in range(1, config.iterationsNum + 1):
         for _ in range(1, config.replayRatio + 1):
             data = dreamer.buffer.sample(dreamer.config.batchSize, dreamer.config.batchLength)
-            recurrentStates, latentStates, worldModelMetrics = dreamer.worldModelTraining(data)
-            actorCriticMetrics = dreamer.behaviorTraining(recurrentStates, latentStates)
+            initialStates, worldModelMetrics = dreamer.worldModelTraining(data)
+            actorCriticMetrics = dreamer.behaviorTraining(initialStates)
             dreamer.totalGradientSteps += 1
 
             if dreamer.totalGradientSteps % config.checkpointInterval == 0 and config.saveCheckpoints:
