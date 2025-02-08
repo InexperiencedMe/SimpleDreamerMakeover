@@ -18,19 +18,21 @@ class Dreamer:
         self.discreteActionBool = discreteActionBool
         self.config = config
 
-        fullStateSize = config.recurrentSize + config.latentSize
+        self.recurrentSize = config.recurrentSize
+        self.latentSize = config.latentLength*config.latentClasses
+        self.fullStateSize = config.recurrentSize + self.latentSize
 
         # self.actor           = Actor2(fullStateSize, actionSize, device, config.actor, actionHigh=[1, 1, 1], actionLow=[-1, 0, 0]).to(self.device)
-        self.actor           = Actor(fullStateSize, actionSize, discreteActionBool,                             config.actor          ).to(self.device)
-        self.critic          = Critic(fullStateSize,                                                            config.critic         ).to(self.device)
+        self.actor           = Actor(self.fullStateSize, actionSize, discreteActionBool,                             config.actor          ).to(self.device)
+        self.critic          = Critic(self.fullStateSize,                                                            config.critic         ).to(self.device)
         self.encoder         = Encoder(observationShape,                                                        config.encoder        ).to(self.device) # Should have output size
-        self.decoder         = Decoder(fullStateSize, observationShape,                                         config.decoder        ).to(self.device)
-        self.recurrentModel  = RecurrentModel(config.recurrentSize, config.latentSize, actionSize,              config.recurrentModel ).to(self.device)
-        self.priorNet        = PriorNet(config.recurrentSize, config.latentSize,                                config.priorNet       ).to(self.device)
-        self.posteriorNet    = PosteriorNet(config.recurrentSize + config.encodedObsSize, config.latentSize,    config.posteriorNet   ).to(self.device)
-        self.rewardPredictor = RewardModel(fullStateSize,                                                       config.reward         ).to(self.device)
+        self.decoder         = Decoder(self.fullStateSize, observationShape,                                         config.decoder        ).to(self.device)
+        self.recurrentModel  = RecurrentModel(config.recurrentSize, self.latentSize, actionSize,              config.recurrentModel ).to(self.device)
+        self.priorNet        = PriorNet(config.recurrentSize, self.latentSize,                                config.priorNet       ).to(self.device)
+        self.posteriorNet    = PosteriorNet(config.recurrentSize + config.encodedObsSize, self.latentSize,    config.posteriorNet   ).to(self.device)
+        self.rewardPredictor = RewardModel(self.fullStateSize,                                                       config.reward         ).to(self.device)
         if config.useContinuationPrediction:
-            self.continuePredictor  = ContinueModel(fullStateSize,                                              config.continuation   ).to(self.device)
+            self.continuePredictor  = ContinueModel(self.fullStateSize,                                              config.continuation   ).to(self.device)
 
         self.buffer = ReplayBuffer(observationShape, actionSize, config, device)
 
@@ -50,7 +52,7 @@ class Dreamer:
 
     def worldModelTraining(self, data):
         data.encodedObservation = self.encoder(data.observation)
-        previousRecurrentState, previousLatentState = torch.zeros(len(data.action), self.config.recurrentSize, device=self.device), torch.zeros(len(data.action), self.config.latentSize, device=self.device)
+        previousRecurrentState, previousLatentState = torch.zeros(len(data.action), self.recurrentSize, device=self.device), torch.zeros(len(data.action), self.latentSize, device=self.device)
 
         priors, priorDistributionsMeans, priorDistributionsStds, posteriors, posteriorDistributionsMeans, posteriorDistributionsStds, recurrentStates = [], [], [], [], [], [], []
         for t in range(1, self.config.batchLength):
@@ -107,11 +109,11 @@ class Dreamer:
             "rewardPredictorLoss"   : rewardLoss.item(),
             "klLoss"                : klLoss.item() - klLossShiftForGraphing}
 
-        return fullStates.view(-1, self.config.recurrentSize + self.config.latentSize).detach(), metrics
+        return fullStates.view(-1, self.fullStateSize).detach(), metrics
 
 
     def behaviorTraining(self, fullState):
-        recurrentState, latentState = torch.split(fullState, (self.config.recurrentSize, self.config.latentSize), -1)
+        recurrentState, latentState = torch.split(fullState, (self.recurrentSize, self.latentSize), -1)
         fullStates = []
         for _ in range(self.config.imaginationHorizon):
             action = self.actor(fullState)
@@ -152,7 +154,7 @@ class Dreamer:
     def environmentInteraction(self, env, numEpisodes, seed=0, evaluation=False, saveVideo=False, filename="videos/unnamedVideo", fps=30, macroBlockSize=16):
         scores = []
         for i in range(numEpisodes):
-            posterior, recurrentState = torch.zeros(1, self.config.latentSize, device=self.device), torch.zeros(1, self.config.recurrentSize, device=self.device)
+            posterior, recurrentState = torch.zeros(1, self.latentSize, device=self.device), torch.zeros(1, self.recurrentSize, device=self.device)
             action = torch.zeros(1, self.actionSize).to(self.device)
 
             observation = env.reset(seed=seed + self.totalEpisodes)
