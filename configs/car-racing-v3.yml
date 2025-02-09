@@ -1,5 +1,5 @@
 environmentName: CarRacing-v3
-runName: initialStates
+runName: SheepRL_KL_LOSS
 seed: 1
 
 # total gradients steps will be iterations * replayRatio
@@ -9,9 +9,9 @@ saveMetrics: True        # Saves metrics at replayRatio interval
 saveCheckpoints: True
 checkpointInterval: 2000
 resume: False
-checkpointToLoad: 20k
+checkpointToLoad: 30k
 
-episodesBeforeStart: 2
+episodesBeforeStart: 10
 numInteractionEpisodes: 1
 numEvaluationEpisodes: 1
 
@@ -20,21 +20,24 @@ dreamer:
     batchLength: 64
     imaginationHorizon: 15
 
-    freeNats: 3
-    discount: 0.99
-    lambda_: 0.95
+    recurrentSize: 600
+    latentLength: 16
+    latentClasses: 16
+    encodedObsSize: 1024 #FIXME: You can't just modify it
 
     useContinuationPrediction: False
-    actorLR: 0.00008
+    actorLR: 0.00004
     criticLR: 0.0001
     worldModelLR: 0.0002
     gradientNormType: 2
     gradientClip: 100
 
-    recurrentSize: 600
-    latentLength: 16
-    latentClasses: 16
-    encodedObsSize: 1024 #FIXME: You can't just modify it
+    freeNats: 1
+    discount: 0.99
+    lambda_: 0.95
+    betaPrior: 1.0
+    betaPosterior: 0.1
+
 
     buffer:
         capacity: 50000
@@ -60,12 +63,14 @@ dreamer:
         numLayers: 2
         activation: ELU
         min_std: 0.1
+        uniformMix: 0.01
 
     posteriorNet:
         hiddenSize: 200
         numLayers: 2
         activation: ELU
         min_std: 0.1
+        uniformMix: 0.01
         
     reward:
         hiddenSize: 400
@@ -81,7 +86,7 @@ dreamer:
         hiddenSize: 400
         min_std: 0.0001
         init_std: 5.
-        mean_scale: 5
+        mean_scale: 1
         activation: ELU
         numLayers: 2
 

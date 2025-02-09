@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.distributions import Normal, TanhTransform, Bernoulli
+from torch.distributions import Normal, TanhTransform, Bernoulli, Independent, OneHotCategoricalStraightThrough
+from torch.distributions.utils import probs_to_logits
 
 from utils import create_normal_dist, sequentialModel1D, horizontal_forward
 
@@ -23,7 +24,7 @@ class RecurrentModel(nn.Module):
 
 
 # Needs a remake
-class PriorNet(nn.Module):
+class OldPriorNet(nn.Module):
     def __init__(self, inputSize, outputSize, config):
         super().__init__()
         self.config = config
@@ -37,7 +38,7 @@ class PriorNet(nn.Module):
 
 
 # Needs a remake
-class PosteriorNet(nn.Module,):
+class OldPosteriorNet(nn.Module):
     def __init__(self, inputSize, outputSize, config):
         super().__init__()
         self.config = config
@@ -49,6 +50,47 @@ class PosteriorNet(nn.Module,):
         posterior = posterior_dist.rsample()
         return posterior_dist, posterior
 
+
+class PriorNet(nn.Module):
+    def __init__(self, inputSize, latentLength, latentClasses, config):
+        super().__init__()
+        self.config = config
+        self.latentLength = latentLength
+        self.latentClasses = latentClasses
+        self.latentSize = latentLength*latentClasses
+        self.mlp = sequentialModel1D(inputSize, [self.config.hiddenSize]*self.config.numLayers, self.latentSize, self.config.activation)
+    
+    def forward(self, x):
+        rawLogits = self.mlp(x)
+
+        probabilities = rawLogits.view(-1, self.latentLength, self.latentClasses).softmax(-1)
+        uniform = torch.ones_like(probabilities)/self.latentClasses
+        finalProbabilities = (1 - self.config.uniformMix)*probabilities + self.config.uniformMix*uniform
+        logits = probs_to_logits(finalProbabilities)
+
+        sample = Independent(OneHotCategoricalStraightThrough(logits=logits), 1).rsample()
+        return sample.view(-1, self.latentSize), logits
+    
+
+class PosteriorNet(nn.Module):
+    def __init__(self, inputSize, latentLength, latentClasses, config):
+        super().__init__()
+        self.config = config
+        self.latentLength = latentLength
+        self.latentClasses = latentClasses
+        self.latentSize = latentLength*latentClasses
+        self.mlp = sequentialModel1D(inputSize, [self.config.hiddenSize]*self.config.numLayers, self.latentSize, self.config.activation)
+    
+    def forward(self, x):
+        rawLogits = self.mlp(x)
+
+        probabilities = rawLogits.view(-1, self.latentLength, self.latentClasses).softmax(-1)
+        uniform = torch.ones_like(probabilities)/self.latentClasses
+        finalProbabilities = (1 - self.config.uniformMix)*probabilities + self.config.uniformMix*uniform
+        logits = probs_to_logits(finalProbabilities)
+
+        sample = Independent(OneHotCategoricalStraightThrough(logits=logits), 1).rsample()
+        return sample.view(-1, self.latentSize), logits
 
 # Remade
 class RewardModel(nn.Module):

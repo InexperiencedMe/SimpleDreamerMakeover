@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from torch.distributions import Categorical, kl_divergence, Independent, OneHotCategoricalStraightThrough
 import numpy as np
 import cv2 as cv
 import os
@@ -22,17 +23,17 @@ class Dreamer:
         self.latentSize = config.latentLength*config.latentClasses
         self.fullStateSize = config.recurrentSize + self.latentSize
 
+        self.actor           = Actor(self.fullStateSize, actionSize, discreteActionBool,                                             config.actor           ).to(self.device)
         # self.actor           = Actor2(fullStateSize, actionSize, device, config.actor, actionHigh=[1, 1, 1], actionLow=[-1, 0, 0]).to(self.device)
-        self.actor           = Actor(self.fullStateSize, actionSize, discreteActionBool,                             config.actor          ).to(self.device)
-        self.critic          = Critic(self.fullStateSize,                                                            config.critic         ).to(self.device)
-        self.encoder         = Encoder(observationShape,                                                        config.encoder        ).to(self.device) # Should have output size
-        self.decoder         = Decoder(self.fullStateSize, observationShape,                                         config.decoder        ).to(self.device)
-        self.recurrentModel  = RecurrentModel(config.recurrentSize, self.latentSize, actionSize,              config.recurrentModel ).to(self.device)
-        self.priorNet        = PriorNet(config.recurrentSize, self.latentSize,                                config.priorNet       ).to(self.device)
-        self.posteriorNet    = PosteriorNet(config.recurrentSize + config.encodedObsSize, self.latentSize,    config.posteriorNet   ).to(self.device)
-        self.rewardPredictor = RewardModel(self.fullStateSize,                                                       config.reward         ).to(self.device)
+        self.critic          = Critic(self.fullStateSize,                                                                            config.critic          ).to(self.device)
+        self.encoder         = Encoder(observationShape,                                                                             config.encoder         ).to(self.device) # Should have output size
+        self.decoder         = Decoder(self.fullStateSize, observationShape,                                                         config.decoder         ).to(self.device)
+        self.recurrentModel  = RecurrentModel(config.recurrentSize, self.latentSize, actionSize,                                     config.recurrentModel  ).to(self.device)
+        self.priorNet        = PriorNet(config.recurrentSize, config.latentLength, config.latentClasses,                             config.priorNet        ).to(self.device)
+        self.posteriorNet    = PosteriorNet(config.recurrentSize + config.encodedObsSize, config.latentLength, config.latentClasses, config.posteriorNet    ).to(self.device)
+        self.rewardPredictor = RewardModel(self.fullStateSize,                                                                       config.reward          ).to(self.device)
         if config.useContinuationPrediction:
-            self.continuePredictor  = ContinueModel(self.fullStateSize,                                              config.continuation   ).to(self.device)
+            self.continuePredictor  = ContinueModel(self.fullStateSize,                                                              config.continuation).to(self.device)
 
         self.buffer = ReplayBuffer(observationShape, actionSize, config, device)
 
@@ -54,30 +55,24 @@ class Dreamer:
         data.encodedObservation = self.encoder(data.observation)
         previousRecurrentState, previousLatentState = torch.zeros(len(data.action), self.recurrentSize, device=self.device), torch.zeros(len(data.action), self.latentSize, device=self.device)
 
-        priors, priorDistributionsMeans, priorDistributionsStds, posteriors, posteriorDistributionsMeans, posteriorDistributionsStds, recurrentStates = [], [], [], [], [], [], []
+        recurrentStates, priorsLogits, posteriors, posteriorsLogits = [], [], [], []
         for t in range(1, self.config.batchLength):
-            recurrentState = self.recurrentModel(previousRecurrentState, previousLatentState, data.action[:, t-1])
-            priorDistribution, prior = self.priorNet(recurrentState)
-            posteriorDistribution, posterior = self.posteriorNet(data.encodedObservation[:, t], recurrentState)
+            recurrentState              = self.recurrentModel(previousRecurrentState, previousLatentState, data.action[:, t-1])
+            _, priorLogits              = self.priorNet(recurrentState)
+            posterior, posteriorLogits  = self.posteriorNet(torch.cat((recurrentState, data.encodedObservation[:, t]), -1))
 
-            priors.append(prior)
-            priorDistributionsMeans.append(priorDistribution.mean)
-            priorDistributionsStds.append(priorDistribution.scale)
-            posteriors.append(posterior)
-            posteriorDistributionsMeans.append(posteriorDistribution.mean)
-            posteriorDistributionsStds.append(posteriorDistribution.scale)
             recurrentStates.append(recurrentState)
+            priorsLogits.append(priorLogits)
+            posteriors.append(posterior)
+            posteriorsLogits.append(posteriorLogits)
 
-            previousLatentState = posterior
             previousRecurrentState = recurrentState
+            previousLatentState    = posterior
 
-        priors                      = torch.stack(priors,                       dim=1)
-        priorDistributionsMeans     = torch.stack(priorDistributionsMeans,      dim=1)
-        priorDistributionsStds      = torch.stack(priorDistributionsStds,       dim=1)
-        posteriors                  = torch.stack(posteriors,                   dim=1)
-        posteriorDistributionsMeans = torch.stack(posteriorDistributionsMeans,  dim=1)
-        posteriorDistributionsStds  = torch.stack(posteriorDistributionsStds,   dim=1)
         recurrentStates             = torch.stack(recurrentStates,              dim=1)
+        priorsLogits                = torch.stack(priorsLogits,                 dim=1)
+        posteriors                  = torch.stack(posteriors,                   dim=1)
+        posteriorsLogits            = torch.stack(posteriorsLogits,             dim=1)
         fullStates                  = torch.cat((recurrentStates, posteriors), dim=-1)
 
         reconstructedObservationsDistributions  =  self.decoder(fullStates)
@@ -86,10 +81,27 @@ class Dreamer:
         rewardDistribution  =  self.rewardPredictor(fullStates)
         rewardLoss          = -rewardDistribution.log_prob(data.reward[:, 1:]).mean()
 
-        priorDistribution     = create_normal_dist(priorDistributionsMeans, priorDistributionsStds, event_shape=1)
-        posteriorDistribution = create_normal_dist(posteriorDistributionsMeans, posteriorDistributionsStds, event_shape=1)
-        klLoss = torch.mean(torch.distributions.kl_divergence(posteriorDistribution, priorDistribution)) # Change that to maxing individual dists
-        klLoss = torch.max(torch.tensor(self.config.freeNats).to(self.device), klLoss)
+        # TODO: Before comitting, make 4 distributions in separate lines, then nicely calc everything like previously
+        priorLoss = kl_divergence(
+            Independent(OneHotCategoricalStraightThrough(logits=posteriorsLogits.detach()), 1),
+            Independent(OneHotCategoricalStraightThrough(logits=priorsLogits), 1))
+        freeNats = torch.full_like(priorLoss, self.config.freeNats)
+        priorLoss = self.config.betaPrior*torch.maximum(priorLoss, freeNats)
+
+        posteriorLoss = kl_divergence(
+            Independent(OneHotCategoricalStraightThrough(logits=posteriorsLogits), 1),
+            Independent(OneHotCategoricalStraightThrough(logits=priorsLogits.detach()), 1))
+        posteriorLoss = self.config.betaPosterior*torch.maximum(posteriorLoss, freeNats)
+        klLoss = (priorLoss + posteriorLoss).mean()
+        # priorDistribution       = Categorical(logits=priorsLogits)
+        # priorDistributionSG     = Categorical(logits=priorsLogits.detach())
+        # posteriorDistribution   = Categorical(logits=posteriorsLogits)
+        # posteriorDistributionSG = Categorical(logits=posteriorsLogits.detach())
+
+        # priorLoss       = kl_divergence(posteriorDistributionSG, priorDistribution)
+        # posteriorLoss   = kl_divergence(posteriorDistribution  , priorDistributionSG)
+        # freeNats        = torch.full_like(priorLoss, self.config.freeNats)
+        # klLoss          = (self.config.betaPrior*torch.maximum(priorLoss, freeNats) + self.config.betaPosterior*torch.maximum(posteriorLoss, freeNats)).mean()
 
         worldModelLoss = klLoss + reconstructionLoss + rewardLoss
         if self.config.useContinuationPrediction:
@@ -102,7 +114,7 @@ class Dreamer:
         nn.utils.clip_grad_norm_(self.worldModelParameters, self.config.gradientClip, norm_type=self.config.gradientNormType)
         self.worldModelOptimizer.step()
 
-        klLossShiftForGraphing = self.config.freeNats
+        klLossShiftForGraphing = (self.config.betaPrior + self.config.betaPosterior)*self.config.freeNats
         metrics = {
             "worldModelLoss"        : worldModelLoss.item() - klLossShiftForGraphing,
             "reconstructionLoss"    : reconstructionLoss.item(),
@@ -118,7 +130,7 @@ class Dreamer:
         for _ in range(self.config.imaginationHorizon):
             action = self.actor(fullState)
             recurrentState = self.recurrentModel(recurrentState, latentState, action)
-            _, latentState = self.priorNet(recurrentState)
+            latentState, _ = self.priorNet(recurrentState)
 
             fullState = torch.cat((recurrentState, latentState), -1)
             fullStates.append(fullState)
@@ -154,7 +166,7 @@ class Dreamer:
     def environmentInteraction(self, env, numEpisodes, seed=0, evaluation=False, saveVideo=False, filename="videos/unnamedVideo", fps=30, macroBlockSize=16):
         scores = []
         for i in range(numEpisodes):
-            posterior, recurrentState = torch.zeros(1, self.latentSize, device=self.device), torch.zeros(1, self.recurrentSize, device=self.device)
+            recurrentState, latentState = torch.zeros(1, self.recurrentSize, device=self.device), torch.zeros(1, self.latentSize, device=self.device)
             action = torch.zeros(1, self.actionSize).to(self.device)
 
             observation = env.reset(seed=seed + self.totalEpisodes)
@@ -162,9 +174,9 @@ class Dreamer:
 
             currentScore, stepCount, done, frames = 0, 0, False, []
             while not done:
-                recurrentState = self.recurrentModel(recurrentState, posterior, action)
-                _, posterior   = self.posteriorNet(encodedObservation.reshape(1, -1), recurrentState)
-                action         = self.actor(torch.cat((recurrentState, posterior), -1)).detach()
+                recurrentState = self.recurrentModel(recurrentState, latentState, action)
+                latentState, _   = self.posteriorNet(torch.cat((recurrentState, encodedObservation.view(1, -1)), -1))
+                action         = self.actor(torch.cat((recurrentState, latentState), -1)).detach()
 
                 if self.discreteActionBool:
                     actionBuffered = action.cpu().numpy()
