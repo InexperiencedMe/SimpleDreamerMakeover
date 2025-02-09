@@ -8,12 +8,10 @@ from utils import create_normal_dist, sequentialModel1D, horizontal_forward
 
 
 
-# Needs a remake
 class RecurrentModel(nn.Module):
     def __init__(self, recurrentSize, latentSize, actionSize, config):
         super().__init__()
         self.config = config
-
         self.activation = getattr(nn, self.config.activation)()
 
         self.linear = nn.Linear(latentSize + actionSize, self.config.hiddenSize)
@@ -21,34 +19,6 @@ class RecurrentModel(nn.Module):
 
     def forward(self, recurrentState, latentState, action):
         return self.recurrent(self.activation(self.linear(torch.cat((latentState, action), -1))), recurrentState)
-
-
-# Needs a remake
-class OldPriorNet(nn.Module):
-    def __init__(self, inputSize, outputSize, config):
-        super().__init__()
-        self.config = config
-        self.network = sequentialModel1D(inputSize, [self.config.hiddenSize]*self.config.numLayers, outputSize*2, self.config.activation)
-
-    def forward(self, x):
-        x = self.network(x)
-        prior_dist = create_normal_dist(x, min_std=self.config.min_std)
-        prior = prior_dist.rsample()
-        return prior_dist, prior
-
-
-# Needs a remake
-class OldPosteriorNet(nn.Module):
-    def __init__(self, inputSize, outputSize, config):
-        super().__init__()
-        self.config = config
-        self.network = sequentialModel1D(inputSize, [self.config.hiddenSize]*self.config.numLayers, outputSize*2, self.config.activation)
-
-    def forward(self, encodedObservation, recurrentState):
-        x = self.network(torch.cat((encodedObservation, recurrentState), 1))
-        posterior_dist = create_normal_dist(x, min_std=self.config.min_std)
-        posterior = posterior_dist.rsample()
-        return posterior_dist, posterior
 
 
 class PriorNet(nn.Module):
@@ -92,7 +62,7 @@ class PosteriorNet(nn.Module):
         sample = Independent(OneHotCategoricalStraightThrough(logits=logits), 1).rsample()
         return sample.view(-1, self.latentSize), logits
 
-# Remade
+
 class RewardModel(nn.Module):
     def __init__(self, inputSize, config):
         super().__init__()
@@ -104,7 +74,6 @@ class RewardModel(nn.Module):
         return Normal(mean, torch.exp(logStd))
 
 
-# Remade
 class ContinueModel(nn.Module):
     def __init__(self, inputSize, config):
         super().__init__()
@@ -200,7 +169,6 @@ class Actor2(nn.Module):
         return action
 
 
-# Remade
 class Critic(nn.Module):
     def __init__(self, inputSize, config):
         super().__init__()

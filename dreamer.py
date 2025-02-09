@@ -47,8 +47,8 @@ class Dreamer:
         self.actorOptimizer         = torch.optim.Adam(self.actor.parameters(), lr=self.config.actorLR)
         self.criticOptimizer        = torch.optim.Adam(self.critic.parameters(), lr=self.config.criticLR)
 
-        self.totalEpisodes = 0
-        self.totalEnvSteps = 0
+        self.totalEpisodes      = 0
+        self.totalEnvSteps      = 0
         self.totalGradientSteps = 0
 
     def worldModelTraining(self, data):

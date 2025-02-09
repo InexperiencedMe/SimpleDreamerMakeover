@@ -23,6 +23,7 @@ def main(configFile):
 
     env             = CleanGymWrapper(GymPixelsProcessingWrapper(gym.wrappers.ResizeObservation(gym.make(config.environmentName), (64, 64))))
     envEvaluation   = CleanGymWrapper(GymPixelsProcessingWrapper(gym.wrappers.ResizeObservation(gym.make(config.environmentName, render_mode="rgb_array"), (64, 64))))
+    
     observationShape, discreteActionBool, actionSize = getEnvProperties(env)
     print(f"envProperties: obs {observationShape}, discrete action {discreteActionBool}, action size {actionSize}")
 
@@ -31,12 +32,11 @@ def main(configFile):
         dreamer.loadCheckpoint(checkpointToLoad)
 
     dreamer.environmentInteraction(env, config.episodesBeforeStart, seed=config.seed)
-
     for _ in range(1, config.iterationsNum + 1):
         for _ in range(1, config.replayRatio + 1):
-            data = dreamer.buffer.sample(dreamer.config.batchSize, dreamer.config.batchLength)
+            data                             = dreamer.buffer.sample(dreamer.config.batchSize, dreamer.config.batchLength)
             initialStates, worldModelMetrics = dreamer.worldModelTraining(data)
-            actorCriticMetrics = dreamer.behaviorTraining(initialStates)
+            actorCriticMetrics               = dreamer.behaviorTraining(initialStates)
             dreamer.totalGradientSteps += 1
 
             if dreamer.totalGradientSteps % config.checkpointInterval == 0 and config.saveCheckpoints:
