@@ -5,26 +5,26 @@ import numpy as np
 import cv2 as cv
 import os
 
-from networks import RecurrentModel, PriorNet, PosteriorNet, RewardModel, ContinueModel, Encoder, Decoder, Actor, Critic
+from networks import RecurrentModel, PriorNet, PosteriorNet, RewardModel, ContinueModel, Encoder, Decoder, Actor2, Critic
 
-from utils import computeLambdaValues, create_normal_dist
+from utils import computeLambdaValues, create_normal_dist, Moments
 from buffer import ReplayBuffer
 import imageio
 
 
 class Dreamer:
     def __init__(self, observationShape, discreteActionBool, actionSize, config, device):
-        self.device = device
-        self.actionSize = actionSize
+        self.device             = device
+        self.actionSize         = actionSize
         self.discreteActionBool = discreteActionBool
-        self.config = config
+        self.config             = config
 
-        self.recurrentSize = config.recurrentSize
-        self.latentSize = config.latentLength*config.latentClasses
-        self.fullStateSize = config.recurrentSize + self.latentSize
+        self.recurrentSize  = config.recurrentSize
+        self.latentSize     = config.latentLength*config.latentClasses
+        self.fullStateSize  = config.recurrentSize + self.latentSize
 
-        self.actor           = Actor(self.fullStateSize, actionSize, discreteActionBool,                                             config.actor           ).to(self.device)
-        # self.actor           = Actor2(fullStateSize, actionSize, device, config.actor, actionHigh=[1, 1, 1], actionLow=[-1, 0, 0]).to(self.device)
+        # self.actor           = Actor(self.fullStateSize, actionSize, discreteActionBool,                                             config.actor           ).to(self.device)
+        self.actor           = Actor2(self.fullStateSize, actionSize, device, config.actor, actionHigh=[1, 1, 1], actionLow=[-1, 0, 0]).to(self.device)
         self.critic          = Critic(self.fullStateSize,                                                                            config.critic          ).to(self.device)
         self.encoder         = Encoder(observationShape,                                                                             config.encoder         ).to(self.device) # Should have output size
         self.decoder         = Decoder(self.fullStateSize, observationShape,                                                         config.decoder         ).to(self.device)
@@ -35,17 +35,17 @@ class Dreamer:
         if config.useContinuationPrediction:
             self.continuePredictor  = ContinueModel(self.fullStateSize,                                                              config.continuation).to(self.device)
 
-        self.buffer = ReplayBuffer(observationShape, actionSize, config, device)
-
+        self.buffer         = ReplayBuffer(observationShape, actionSize, config, device)
+        self.valueMoments   = Moments(device)
 
         self.worldModelParameters = (list(self.encoder.parameters()) + list(self.decoder.parameters()) + list(self.recurrentModel.parameters()) +
                                      list(self.priorNet.parameters()) + list(self.posteriorNet.parameters()) + list(self.rewardPredictor.parameters()))
         if self.config.useContinuationPrediction:
             self.worldModelParameters += list(self.continuePredictor.parameters())
 
-        self.worldModelOptimizer    = torch.optim.Adam(self.worldModelParameters, lr=self.config.worldModelLR)
-        self.actorOptimizer         = torch.optim.Adam(self.actor.parameters(), lr=self.config.actorLR)
-        self.criticOptimizer        = torch.optim.Adam(self.critic.parameters(), lr=self.config.criticLR)
+        self.worldModelOptimizer    = torch.optim.Adam(self.worldModelParameters,   lr=self.config.worldModelLR)
+        self.actorOptimizer         = torch.optim.Adam(self.actor.parameters(),     lr=self.config.actorLR)
+        self.criticOptimizer        = torch.optim.Adam(self.critic.parameters(),    lr=self.config.criticLR)
 
         self.totalEpisodes      = 0
         self.totalEnvSteps      = 0
@@ -81,13 +81,13 @@ class Dreamer:
         rewardDistribution  = self.rewardPredictor(fullStates)
         rewardLoss          = -rewardDistribution.log_prob(data.reward[:, 1:]).mean()
 
-        priorDistribution       = Independent(OneHotCategoricalStraightThrough(logits=priorLogits), 1)
-        priorDistributionSG     = Independent(OneHotCategoricalStraightThrough(logits=priorLogits.detach()), 1)
+        priorDistribution       = Independent(OneHotCategoricalStraightThrough(logits=priorsLogits), 1)
+        priorDistributionSG     = Independent(OneHotCategoricalStraightThrough(logits=priorsLogits.detach()), 1)
         posteriorDistribution   = Independent(OneHotCategoricalStraightThrough(logits=posteriorsLogits), 1)
         posteriorDistributionSG = Independent(OneHotCategoricalStraightThrough(logits=posteriorsLogits.detach()), 1)
 
-        priorLoss       = kl_divergence(posteriorDistributionSG, priorDistribution)
-        posteriorLoss   = kl_divergence(posteriorDistribution, priorDistributionSG)
+        priorLoss       = kl_divergence(posteriorDistributionSG, priorDistribution  )
+        posteriorLoss   = kl_divergence(posteriorDistribution  , priorDistributionSG)
         freeNats        = torch.full_like(priorLoss, self.config.freeNats)
 
         priorLoss       = self.config.betaPrior*torch.maximum(priorLoss, freeNats)
@@ -118,22 +118,30 @@ class Dreamer:
 
     def behaviorTraining(self, fullState):
         recurrentState, latentState = torch.split(fullState, (self.recurrentSize, self.latentSize), -1)
-        fullStates = []
+        fullStates, logprobs, entropies = [], [], []
         for _ in range(self.config.imaginationHorizon):
-            action = self.actor(fullState)
+            action, logprob, entropy = self.actor(fullState.detach(), training=True)
             recurrentState = self.recurrentModel(recurrentState, latentState, action)
             latentState, _ = self.priorNet(recurrentState)
 
             fullState = torch.cat((recurrentState, latentState), -1)
             fullStates.append(fullState)
-        fullStates = torch.stack(fullStates, dim=1)
+            logprobs.append(logprob)
+            entropies.append(entropy)
+        fullStates  = torch.stack(fullStates,   dim=1)
+        logprobs    = torch.stack(logprobs,     dim=1)
+        entropies   = torch.stack(entropies,    dim=1)
         
         predictedRewards = self.rewardPredictor(fullStates).mean
         values           = self.critic(fullStates).mean
         continues        = self.continuePredictor(fullStates).mean if self.config.useContinuationPrediction else self.config.discount*torch.ones_like(values)
         lambdaValues     = computeLambdaValues(predictedRewards, values, continues, self.config.imaginationHorizon, self.device, self.config.lambda_)
 
-        actorLoss        = -torch.mean(lambdaValues)
+        _, inverseScale     = self.valueMoments(lambdaValues)
+        advantages          = (lambdaValues - values[:, :-1])/inverseScale
+
+        print(f"advantages {advantages.shape}, logprobs {logprobs.shape}")
+        actorLoss = -torch.mean(advantages.detach()*logprobs + self.config.entropyScale*entropies)
 
         self.actorOptimizer.zero_grad()
         actorLoss.backward()

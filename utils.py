@@ -202,3 +202,22 @@ def ensureParentFolders(*paths):
         parentFolder = os.path.dirname(path)
         if parentFolder and not os.path.exists(parentFolder):
             os.makedirs(parentFolder, exist_ok=True)
+
+class Moments(nn.Module):
+    def __init__( self, device, decay = 0.99, min_=1, percentileLow = 0.05, percentileHigh = 0.95):
+        super().__init__()
+        self._decay = decay
+        self._min = torch.tensor(min_)
+        self._percentileLow = percentileLow
+        self._percentileHigh = percentileHigh
+        self.register_buffer("low", torch.zeros((), dtype=torch.float32, device=device))
+        self.register_buffer("high", torch.zeros((), dtype=torch.float32, device=device))
+
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        x = x.detach()
+        low = torch.quantile(x, self._percentileLow)
+        high = torch.quantile(x, self._percentileHigh)
+        self.low = self._decay*self.low + (1 - self._decay)*low
+        self.high = self._decay*self.high + (1 - self._decay)*high
+        inverseScale = torch.max(self._min, self.high - self.low)
+        return self.low.detach(), inverseScale.detach()

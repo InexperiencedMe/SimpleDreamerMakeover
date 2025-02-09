@@ -158,7 +158,7 @@ class Actor2(nn.Module):
         self.register_buffer("actionBias", ((torch.tensor(actionHigh, device=device) + torch.tensor(actionLow, device=device)) / 2.0))
 
 
-    def forward(self, x):
+    def forward(self, x, training=False):
         mean, logStd = self.network(x).chunk(2, dim=-1)
         logStd = LOG_STD_MIN + 0.5 * (LOG_STD_MAX - LOG_STD_MIN) * (logStd + 1)
         std = torch.exp(logStd)
@@ -166,7 +166,12 @@ class Actor2(nn.Module):
         sample = distribution.rsample()
         sampleTanh = torch.tanh(sample)
         action = sampleTanh*self.actionScale + self.actionBias
-        return action
+        if training:
+            logProbabilities = distribution.log_prob(sample)
+            logProbabilities -= torch.log(self.actionScale * (1 - sampleTanh.pow(2)) + 1e-6)
+            return action, logProbabilities.sum(-1), distribution.entropy().sum(-1)
+        else:
+            return action
 
 
 class Critic(nn.Module):
