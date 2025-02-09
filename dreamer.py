@@ -75,35 +75,27 @@ class Dreamer:
         posteriorsLogits            = torch.stack(posteriorsLogits,             dim=1)
         fullStates                  = torch.cat((recurrentStates, posteriors), dim=-1)
 
-        reconstructedObservationsDistributions  =  self.decoder(fullStates)
-        reconstructionLoss                      = -reconstructedObservationsDistributions.log_prob(data.observation[:, 1:]).mean()
+        reconstructionDistribution = self.decoder(fullStates)
+        reconstructionLoss         = -reconstructionDistribution.log_prob(data.observation[:, 1:]).mean()
 
-        rewardDistribution  =  self.rewardPredictor(fullStates)
+        rewardDistribution  = self.rewardPredictor(fullStates)
         rewardLoss          = -rewardDistribution.log_prob(data.reward[:, 1:]).mean()
 
-        # TODO: Before comitting, make 4 distributions in separate lines, then nicely calc everything like previously
-        priorLoss = kl_divergence(
-            Independent(OneHotCategoricalStraightThrough(logits=posteriorsLogits.detach()), 1),
-            Independent(OneHotCategoricalStraightThrough(logits=priorsLogits), 1))
-        freeNats = torch.full_like(priorLoss, self.config.freeNats)
-        priorLoss = self.config.betaPrior*torch.maximum(priorLoss, freeNats)
+        priorDistribution       = Independent(OneHotCategoricalStraightThrough(logits=priorLogits), 1)
+        priorDistributionSG     = Independent(OneHotCategoricalStraightThrough(logits=priorLogits.detach()), 1)
+        posteriorDistribution   = Independent(OneHotCategoricalStraightThrough(logits=posteriorsLogits), 1)
+        posteriorDistributionSG = Independent(OneHotCategoricalStraightThrough(logits=posteriorsLogits.detach()), 1)
 
-        posteriorLoss = kl_divergence(
-            Independent(OneHotCategoricalStraightThrough(logits=posteriorsLogits), 1),
-            Independent(OneHotCategoricalStraightThrough(logits=priorsLogits.detach()), 1))
-        posteriorLoss = self.config.betaPosterior*torch.maximum(posteriorLoss, freeNats)
-        klLoss = (priorLoss + posteriorLoss).mean()
-        # priorDistribution       = Categorical(logits=priorsLogits)
-        # priorDistributionSG     = Categorical(logits=priorsLogits.detach())
-        # posteriorDistribution   = Categorical(logits=posteriorsLogits)
-        # posteriorDistributionSG = Categorical(logits=posteriorsLogits.detach())
+        priorLoss       = kl_divergence(posteriorDistributionSG, priorDistribution)
+        posteriorLoss   = kl_divergence(posteriorDistribution, priorDistributionSG)
+        freeNats        = torch.full_like(priorLoss, self.config.freeNats)
 
-        # priorLoss       = kl_divergence(posteriorDistributionSG, priorDistribution)
-        # posteriorLoss   = kl_divergence(posteriorDistribution  , priorDistributionSG)
-        # freeNats        = torch.full_like(priorLoss, self.config.freeNats)
-        # klLoss          = (self.config.betaPrior*torch.maximum(priorLoss, freeNats) + self.config.betaPosterior*torch.maximum(posteriorLoss, freeNats)).mean()
+        priorLoss       = self.config.betaPrior*torch.maximum(priorLoss, freeNats)
+        posteriorLoss   = self.config.betaPosterior*torch.maximum(posteriorLoss, freeNats)
+        klLoss          = (priorLoss + posteriorLoss).mean()
 
         worldModelLoss = klLoss + reconstructionLoss + rewardLoss
+        
         if self.config.useContinuationPrediction:
             continueDistribution = self.continuePredictor(fullStates)
             continueLoss         = nn.BCELoss(continueDistribution.probs, 1 - data.done[:, 1:])
