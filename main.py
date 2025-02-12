@@ -20,14 +20,14 @@ def main(configFile):
     checkpointFilenameBase  = f"{config.folderNames.checkpointsFolder}/{runName}"
     videoFilenameBase       = f"{config.folderNames.videosFolder}/{runName}"
     ensureParentFolders(metricsFilename, plotFilename, checkpointFilenameBase, videoFilenameBase)
-    plotMetrics(f"{metricsFilename}", savePath=f"{plotFilename}")
+    
     env             = CleanGymWrapper(GymPixelsProcessingWrapper(gym.wrappers.ResizeObservation(gym.make(config.environmentName), (64, 64))))
     envEvaluation   = CleanGymWrapper(GymPixelsProcessingWrapper(gym.wrappers.ResizeObservation(gym.make(config.environmentName, render_mode="rgb_array"), (64, 64))))
     
-    observationShape, discreteActionBool, actionSize = getEnvProperties(env)
+    observationShape, discreteActionBool, actionSize, actionLow, actionHigh = getEnvProperties(env)
     print(f"envProperties: obs {observationShape}, discrete action {discreteActionBool}, action size {actionSize}")
 
-    dreamer = Dreamer(observationShape, discreteActionBool, actionSize, config.dreamer, device)
+    dreamer = Dreamer(observationShape, discreteActionBool, actionSize, actionLow, actionHigh, config.dreamer, device)
     if config.resume:
         dreamer.loadCheckpoint(checkpointToLoad)
 

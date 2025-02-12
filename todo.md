@@ -1,0 +1,7 @@
+- Get rid of create normal dist function
+- Get rid of horizontal forward function
+- Remake encoder to output the size specified in the config
+- Remake decoder
+- Twohot losses in values and reward prediction with exponentially spaced bins
+- Symlog and Symexp
+- Add console params to main script?

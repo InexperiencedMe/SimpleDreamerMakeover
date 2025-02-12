@@ -125,30 +125,9 @@ class Decoder(nn.Module):
         return dist
 
 
-# Needs a remake
-class Actor(nn.Module):
-    def __init__(self, inputSize, actionSize, discreteActionBool, config):
-        super().__init__()
-        self.config = config
-        self.discreteActionBool = discreteActionBool
-        actionSize = actionSize if discreteActionBool else 2 * actionSize
-        self.network = sequentialModel1D(inputSize, [self.config.hiddenSize]*self.config.numLayers, actionSize, self.config.activation)
-
-    def forward(self, x):
-        x = self.network(x)
-        if self.discreteActionBool:
-            dist = torch.distributions.OneHotCategorical(logits=x)
-            action = dist.sample() + dist.probs - dist.probs.detach()
-        else:
-            dist = create_normal_dist(x, mean_scale=self.config.mean_scale, init_std=self.config.init_std, min_std=self.config.min_std, activation=torch.tanh)
-            dist = torch.distributions.TransformedDistribution(dist, TanhTransform())
-            action = torch.distributions.Independent(dist, 1).rsample()
-        return action
-
-
 LOG_STD_MAX = 2
 LOG_STD_MIN = -5
-class Actor2(nn.Module):
+class Actor(nn.Module):
     def __init__(self, inputSize, actionSize, device, config, actionLow=[-1], actionHigh=[1]):
         super().__init__()
         actionSize *= 2
@@ -159,11 +138,9 @@ class Actor2(nn.Module):
 
 
     def forward(self, x, training=False):
-        out = self.network(x)
-        mean, logStd = out.chunk(2, dim=-1)
-
+        x = self.network(x)
+        mean, logStd = x.chunk(2, dim=-1)
         logStd = LOG_STD_MIN + 0.5 * (LOG_STD_MAX - LOG_STD_MIN) * (logStd + 1)
-        logStd = torch.clamp(logStd, LOG_STD_MIN, LOG_STD_MAX)  # Clamp to prevent extreme values
         std = torch.exp(logStd)
 
         distribution = Normal(mean, std)
@@ -171,10 +148,10 @@ class Actor2(nn.Module):
         sampleTanh = torch.tanh(sample)
         action = sampleTanh * self.actionScale + self.actionBias
         if training:
-            logProbabilities = distribution.log_prob(sample)
-            logProbabilities -= torch.log(self.actionScale * (1 - sampleTanh.pow(2)) + 1e-6)
+            logprobs = distribution.log_prob(sample)
+            logprobs -= torch.log(self.actionScale * (1 - sampleTanh.pow(2)) + 1e-6)
             entropy = distribution.entropy()
-            return action, logProbabilities.sum(-1), entropy.sum(-1)
+            return action, logprobs.sum(-1), entropy.sum(-1)
         else:
             return action
 

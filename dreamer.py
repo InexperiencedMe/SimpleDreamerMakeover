@@ -1,19 +1,18 @@
 import torch
 import torch.nn as nn
-from torch.distributions import Categorical, kl_divergence, Independent, OneHotCategoricalStraightThrough
+from torch.distributions import kl_divergence, Independent, OneHotCategoricalStraightThrough
 import numpy as np
 import cv2 as cv
 import os
 
-from networks import RecurrentModel, PriorNet, PosteriorNet, RewardModel, ContinueModel, Encoder, Decoder, Actor2, Critic
-
-from utils import computeLambdaValues, create_normal_dist, Moments
+from networks import RecurrentModel, PriorNet, PosteriorNet, RewardModel, ContinueModel, Encoder, Decoder, Actor, Critic
+from utils import computeLambdaValues, Moments
 from buffer import ReplayBuffer
 import imageio
 
 
 class Dreamer:
-    def __init__(self, observationShape, discreteActionBool, actionSize, config, device):
+    def __init__(self, observationShape, discreteActionBool, actionSize, actionLow, actionHigh, config, device):
         self.device             = device
         self.actionSize         = actionSize
         self.discreteActionBool = discreteActionBool
@@ -23,8 +22,7 @@ class Dreamer:
         self.latentSize     = config.latentLength*config.latentClasses
         self.fullStateSize  = config.recurrentSize + self.latentSize
 
-        # self.actor           = Actor(self.fullStateSize, actionSize, discreteActionBool,                                             config.actor           ).to(self.device)
-        self.actor           = Actor2(self.fullStateSize, actionSize, device, config.actor, actionHigh=[1, 1, 1], actionLow=[-1, 0, 0]).to(self.device)
+        self.actor           = Actor(self.fullStateSize, actionSize, device, config.actor, actionLow=actionLow, actionHigh=actionHigh).to(self.device)
         self.critic          = Critic(self.fullStateSize,                                                                            config.critic          ).to(self.device)
         self.encoder         = Encoder(observationShape,                                                                             config.encoder         ).to(self.device) # Should have output size
         self.decoder         = Decoder(self.fullStateSize, observationShape,                                                         config.decoder         ).to(self.device)
@@ -112,6 +110,7 @@ class Dreamer:
             "reconstructionLoss"    : reconstructionLoss.item(),
             "rewardPredictorLoss"   : rewardLoss.item(),
             "klLoss"                : klLoss.item() - klLossShiftForGraphing}
+            
 
         return fullStates.view(-1, self.fullStateSize).detach(), metrics
 
@@ -158,6 +157,9 @@ class Dreamer:
         metrics = {
             "actorLoss"     : actorLoss.item(),
             "criticLoss"    : criticLoss.item(),
+            "entropies"     : entropies.mean().item(),
+            "logprobs"      : logprobs.mean().item(),
+            "advantages"    : advantages.mean().item(),
             "criticValues"  : values.mean().item()}
         return metrics
 
