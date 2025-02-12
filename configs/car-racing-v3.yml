@@ -1,15 +1,15 @@
 environmentName: CarRacing-v3
-runName: DV3ActorLoss
+runName: DV3ActorLossSAMPLE
 seed: 1
 
 # total gradients steps will be iterations * replayRatio
-iterationsNum: 300
+iterationsNum: 40
 replayRatio: 100
 saveMetrics: True        # Saves metrics at replayRatio interval
 saveCheckpoints: True
 checkpointInterval: 2000
-resume: False
-checkpointToLoad: 30k
+resume: True
+checkpointToLoad: 96k
 
 episodesBeforeStart: 1
 numInteractionEpisodes: 1

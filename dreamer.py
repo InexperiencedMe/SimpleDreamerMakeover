@@ -79,7 +79,7 @@ class Dreamer:
         reconstructionLoss         = -reconstructionDistribution.log_prob(data.observation[:, 1:]).mean()
 
         rewardDistribution  = self.rewardPredictor(fullStates)
-        rewardLoss          = -rewardDistribution.log_prob(data.reward[:, 1:]).mean()
+        rewardLoss          = -rewardDistribution.log_prob(data.reward[:, 1:].squeeze(-1)).mean()
 
         priorDistribution       = Independent(OneHotCategoricalStraightThrough(logits=priorsLogits), 1)
         priorDistributionSG     = Independent(OneHotCategoricalStraightThrough(logits=priorsLogits.detach()), 1)
@@ -94,7 +94,7 @@ class Dreamer:
         posteriorLoss   = self.config.betaPosterior*torch.maximum(posteriorLoss, freeNats)
         klLoss          = (priorLoss + posteriorLoss).mean()
 
-        worldModelLoss = klLoss + reconstructionLoss + rewardLoss
+        worldModelLoss =  reconstructionLoss + rewardLoss + klLoss
         
         if self.config.useContinuationPrediction:
             continueDistribution = self.continuePredictor(fullStates)
@@ -128,19 +128,18 @@ class Dreamer:
             fullStates.append(fullState)
             logprobs.append(logprob)
             entropies.append(entropy)
-        fullStates  = torch.stack(fullStates,   dim=1)
-        logprobs    = torch.stack(logprobs,     dim=1)
-        entropies   = torch.stack(entropies,    dim=1)
+        fullStates  = torch.stack(fullStates,    dim=1)
+        logprobs    = torch.stack(logprobs[1:],  dim=1)
+        entropies   = torch.stack(entropies[1:], dim=1)
         
         predictedRewards = self.rewardPredictor(fullStates).mean
         values           = self.critic(fullStates).mean
         continues        = self.continuePredictor(fullStates).mean if self.config.useContinuationPrediction else self.config.discount*torch.ones_like(values)
         lambdaValues     = computeLambdaValues(predictedRewards, values, continues, self.config.imaginationHorizon, self.device, self.config.lambda_)
 
-        _, inverseScale     = self.valueMoments(lambdaValues)
-        advantages          = (lambdaValues - values[:, :-1])/inverseScale
+        _, inverseScale = self.valueMoments(lambdaValues)
+        advantages      = (lambdaValues - values[:, :-1])/inverseScale
 
-        print(f"advantages {advantages.shape}, logprobs {logprobs.shape}")
         actorLoss = -torch.mean(advantages.detach()*logprobs + self.config.entropyScale*entropies)
 
         self.actorOptimizer.zero_grad()
@@ -157,9 +156,9 @@ class Dreamer:
         self.criticOptimizer.step()
 
         metrics = {
-            "actorLoss"         : actorLoss.item(),
-            "criticLoss"        : criticLoss.item(),
-            "criticValues"      : values.mean().item()}
+            "actorLoss"     : actorLoss.item(),
+            "criticLoss"    : criticLoss.item(),
+            "criticValues"  : values.mean().item()}
         return metrics
 
     @torch.no_grad()

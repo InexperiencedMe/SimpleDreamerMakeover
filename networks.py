@@ -71,7 +71,7 @@ class RewardModel(nn.Module):
 
     def forward(self, x):
         mean, logStd = self.network(x).chunk(2, dim=-1)
-        return Normal(mean, torch.exp(logStd))
+        return Normal(mean.squeeze(-1), torch.exp(logStd).squeeze(-1))
 
 
 class ContinueModel(nn.Module):
@@ -81,7 +81,7 @@ class ContinueModel(nn.Module):
         self.network = sequentialModel1D(inputSize, [self.config.hiddenSize]*self.config.numLayers, 1, self.config.activation)
 
     def forward(self, x):
-        return Bernoulli(logits=self.network(x))
+        return Bernoulli(logits=self.network(x).squeeze(-1))
 
 # Needs a remake
 class Encoder(nn.Module):
@@ -159,17 +159,22 @@ class Actor2(nn.Module):
 
 
     def forward(self, x, training=False):
-        mean, logStd = self.network(x).chunk(2, dim=-1)
+        out = self.network(x)
+        mean, logStd = out.chunk(2, dim=-1)
+
         logStd = LOG_STD_MIN + 0.5 * (LOG_STD_MAX - LOG_STD_MIN) * (logStd + 1)
+        logStd = torch.clamp(logStd, LOG_STD_MIN, LOG_STD_MAX)  # Clamp to prevent extreme values
         std = torch.exp(logStd)
+
         distribution = Normal(mean, std)
-        sample = distribution.rsample()
+        sample = distribution.sample()
         sampleTanh = torch.tanh(sample)
-        action = sampleTanh*self.actionScale + self.actionBias
+        action = sampleTanh * self.actionScale + self.actionBias
         if training:
             logProbabilities = distribution.log_prob(sample)
             logProbabilities -= torch.log(self.actionScale * (1 - sampleTanh.pow(2)) + 1e-6)
-            return action, logProbabilities.sum(-1), distribution.entropy().sum(-1)
+            entropy = distribution.entropy()
+            return action, logProbabilities.sum(-1), entropy.sum(-1)
         else:
             return action
 
@@ -182,4 +187,4 @@ class Critic(nn.Module):
 
     def forward(self, x):
         mean, logStd = self.network(x).chunk(2, dim=-1)
-        return Normal(mean, torch.exp(logStd))
+        return Normal(mean.squeeze(-1), torch.exp(logStd).squeeze(-1))

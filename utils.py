@@ -77,44 +77,52 @@ def plotMetrics(filename, title="", savePath="metricsPlot", window=10):
             continue
         
         fig.add_trace(pgo.Scatter(
-            x=data["envSteps"], y=data[column], mode='lines',
+            x=data["gradientSteps"], y=data[column], mode='lines',
             name=f"{column} (original)",
             line=dict(color='gray', width=1, dash='dot'),
             opacity=0.5, visible='legendonly'))
         
         smoothed_data = data[column].rolling(window=window, min_periods=1).mean()
         fig.add_trace(pgo.Scatter(
-            x=data["envSteps"], y=smoothed_data, mode='lines',
+            x=data["gradientSteps"], y=smoothed_data, mode='lines',
             name=f"{column} (smoothed)",
             line=dict(color=colors[idx % num_colors], width=2)))
     
+    fig.add_trace(pgo.Scatter(
+    x=data["envSteps"], 
+    y=[None] * len(data["envSteps"]),  # Dummy points to show second axis
+    mode='lines',
+    name="Environment Steps (Secondary)",
+    xaxis='x2',
+    showlegend=False))
+
     fig.update_layout(
-        title=f"{title}",
-        title_x=0.5,
-        xaxis=dict(
-            title="Environment Steps",
-            showgrid=True,
-            zeroline=False
-        ),
-        xaxis2=dict(
-            title="Gradient Steps",
-            overlaying='x',
-            side='top',
-            showgrid=False,
-            zeroline=False
-        ),
-        yaxis_title="Value",
-        template="plotly_dark",
-        height=1080,
-        width=1920,
-        legend=dict(
-            x=0.04,
-            y=0.04,
-            xanchor="left",
-            yanchor="bottom",
-            bgcolor="rgba(0,0,0,0.8)",
-            bordercolor="White",
-            borderwidth=2))
+    title=f"{title}",
+    title_x=0.5,
+    xaxis=dict(
+        title="Gradient Steps",
+        showgrid=True,
+        zeroline=False
+    ),
+    xaxis2=dict(
+        title="Environment Steps",
+        overlaying='x',
+        side='top',
+        showgrid=False,
+        zeroline=False
+    ),
+    yaxis_title="Value",
+    template="plotly_dark",
+    height=1080,
+    width=1920,
+    legend=dict(
+        x=0.04,
+        y=0.04,
+        xanchor="left",
+        yanchor="bottom",
+        bgcolor="rgba(0,0,0,0.8)",
+        bordercolor="White",
+        borderwidth=2))
 
     if not savePath.endswith(".html"):
         savePath += ".html"
