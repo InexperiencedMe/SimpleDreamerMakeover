@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from torch.distributions import Normal, TanhTransform, Bernoulli, Independent, OneHotCategoricalStraightThrough
 from torch.distributions.utils import probs_to_logits
 
-from utils import create_normal_dist, sequentialModel1D, horizontal_forward
+from utils import sequentialModel1D, horizontal_forward
 
 
 
@@ -121,8 +121,7 @@ class Decoder(nn.Module):
 
     def forward(self, x):
         x = horizontal_forward(self.network, x, input_shape=(self.inputSize,), output_shape=self.observationShape)
-        dist = create_normal_dist(x, std=1, event_shape=len(self.observationShape))
-        return dist
+        return Independent(Normal(x, std=1), len(self.observationShape))
 
 
 LOG_STD_MAX = 2

@@ -160,30 +160,6 @@ def sequentialModel1D(inputSize, hiddenSizes, outputSize, activationFunction="Ta
     return nn.Sequential(*layers)
 
 
-def create_normal_dist(
-    x,
-    std=None,
-    mean_scale=1,
-    init_std=0,
-    min_std=0.1,
-    activation=None,
-    event_shape=None,
-):
-    if std == None:
-        mean, std = torch.chunk(x, 2, -1)
-        mean = mean / mean_scale
-        if activation:
-            mean = activation(mean)
-        mean = mean_scale * mean
-        std = F.softplus(std + init_std) + min_std
-    else:
-        mean = x
-    dist = torch.distributions.Normal(mean, std)
-    if event_shape:
-        dist = torch.distributions.Independent(dist, event_shape)
-    return dist
-
-
 def computeLambdaValues(rewards, values, continues, horizon_length, device, lambda_):
     """
     rewards : (batch_size, time_step, hidden_size)
@@ -210,6 +186,7 @@ def ensureParentFolders(*paths):
         parentFolder = os.path.dirname(path)
         if parentFolder and not os.path.exists(parentFolder):
             os.makedirs(parentFolder, exist_ok=True)
+
 
 class Moments(nn.Module):
     def __init__( self, device, decay = 0.99, min_=1, percentileLow = 0.05, percentileHigh = 0.95):
