@@ -24,15 +24,17 @@ def main(configFile):
     env             = CleanGymWrapper(GymPixelsProcessingWrapper(gym.wrappers.ResizeObservation(gym.make(config.environmentName), (64, 64))))
     envEvaluation   = CleanGymWrapper(GymPixelsProcessingWrapper(gym.wrappers.ResizeObservation(gym.make(config.environmentName, render_mode="rgb_array"), (64, 64))))
     
-    observationShape, discreteActionBool, actionSize, actionLow, actionHigh = getEnvProperties(env)
-    print(f"envProperties: obs {observationShape}, discrete action {discreteActionBool}, action size {actionSize}")
+    observationShape, actionSize, actionLow, actionHigh = getEnvProperties(env)
+    print(f"envProperties: obs {observationShape}, action size {actionSize}, actionLow {actionLow}, actionHigh {actionHigh}")
 
-    dreamer = Dreamer(observationShape, discreteActionBool, actionSize, actionLow, actionHigh, config.dreamer, device)
+    dreamer = Dreamer(observationShape, actionSize, actionLow, actionHigh, device, config.dreamer)
     if config.resume:
         dreamer.loadCheckpoint(checkpointToLoad)
 
     dreamer.environmentInteraction(env, config.episodesBeforeStart, seed=config.seed)
-    for _ in range(1, config.iterationsNum + 1):
+
+    iterationsNum = config.gradientSteps // config.replayRatio
+    for _ in range(1, iterationsNum + 1):
         for _ in range(1, config.replayRatio + 1):
             data                             = dreamer.buffer.sample(dreamer.config.batchSize, dreamer.config.batchLength)
             initialStates, worldModelMetrics = dreamer.worldModelTraining(data)

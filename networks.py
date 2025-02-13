@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.distributions import Normal, TanhTransform, Bernoulli, Independent, OneHotCategoricalStraightThrough
+from torch.distributions import Normal, Bernoulli, Independent, OneHotCategoricalStraightThrough
 from torch.distributions.utils import probs_to_logits
 
 from utils import sequentialModel1D, horizontal_forward
@@ -83,23 +83,43 @@ class ContinueModel(nn.Module):
     def forward(self, x):
         return Bernoulli(logits=self.network(x).squeeze(-1))
 
-# Needs a remake
+
 class Encoder(nn.Module):
-    def __init__(self, observationShape, config):
+    def __init__(self, inputShape, outputSize, config):
         super().__init__()
         self.config = config
-
         activation = getattr(nn, self.config.activation)()
-        self.observationShape = observationShape
-
-        self.network = nn.Sequential(
-            nn.Conv2d(self.observationShape[0], self.config.depth*1, self.config.kernel_size, self.config.stride),    activation,
-            nn.Conv2d(self.config.depth*1, self.config.depth*2, self.config.kernel_size, self.config.stride),       activation,
-            nn.Conv2d(self.config.depth*2, self.config.depth*4, self.config.kernel_size, self.config.stride),       activation,
-            nn.Conv2d(self.config.depth*4, self.config.depth*8, self.config.kernel_size, self.config.stride),       activation)
+        c, h, w = inputShape
+        self.outputSize = outputSize
+        self.convolutionalNet = nn.Sequential(
+            nn.Conv2d(c, 8,     kernel_size=4, stride=2, padding=1),    activation,
+            nn.Conv2d(8, 16,    kernel_size=4, stride=2, padding=1),    activation,
+            nn.Conv2d(16, 32,   kernel_size=4, stride=2, padding=1),    activation,
+            nn.Conv2d(32, 64,   kernel_size=4, stride=2, padding=1),    activation,
+            nn.Flatten(),
+            nn.Linear(64 * (h // 16) * (w // 16), outputSize),          activation)
 
     def forward(self, x):
-        return horizontal_forward(self.network, x, input_shape=self.observationShape)
+        return self.convolutionalNet(x).view(-1, self.outputSize)
+
+
+# # Needs a remake
+# class Encoder(nn.Module):
+#     def __init__(self, observationShape, config):
+#         super().__init__()
+#         self.config = config
+
+#         activation = getattr(nn, self.config.activation)()
+#         self.observationShape = observationShape
+
+#         self.network = nn.Sequential(
+#             nn.Conv2d(self.observationShape[0], self.config.depth*1, self.config.kernel_size, self.config.stride),    activation,
+#             nn.Conv2d(self.config.depth*1, self.config.depth*2, self.config.kernel_size, self.config.stride),       activation,
+#             nn.Conv2d(self.config.depth*2, self.config.depth*4, self.config.kernel_size, self.config.stride),       activation,
+#             nn.Conv2d(self.config.depth*4, self.config.depth*8, self.config.kernel_size, self.config.stride),       activation)
+
+#     def forward(self, x):
+#         return horizontal_forward(self.network, x, input_shape=self.observationShape)
 
 # Needs a remake
 class Decoder(nn.Module):
@@ -121,13 +141,13 @@ class Decoder(nn.Module):
 
     def forward(self, x):
         x = horizontal_forward(self.network, x, input_shape=(self.inputSize,), output_shape=self.observationShape)
-        return Independent(Normal(x, std=1), len(self.observationShape))
+        return Independent(Normal(x, 1), len(self.observationShape))
 
 
 LOG_STD_MAX = 2
 LOG_STD_MIN = -5
 class Actor(nn.Module):
-    def __init__(self, inputSize, actionSize, device, config, actionLow=[-1], actionHigh=[1]):
+    def __init__(self, inputSize, actionSize, actionLow, actionHigh, device, config):
         super().__init__()
         actionSize *= 2
         self.config = config
@@ -137,9 +157,9 @@ class Actor(nn.Module):
 
 
     def forward(self, x, training=False):
-        x = self.network(x)
-        mean, logStd = x.chunk(2, dim=-1)
-        logStd = LOG_STD_MIN + 0.5 * (LOG_STD_MAX - LOG_STD_MIN) * (logStd + 1)
+        mean, logStd = self.network(x).chunk(2, dim=-1)
+        logStd = LOG_STD_MIN + 0.5 * (LOG_STD_MAX - LOG_STD_MIN) * (logStd + 1) # Transforms range (-1, 1) to (min, max)
+        logStd = torch.clamp(logStd, LOG_STD_MIN, LOG_STD_MAX) # This saves from nan on mean, weird
         std = torch.exp(logStd)
 
         distribution = Normal(mean, std)

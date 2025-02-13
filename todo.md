@@ -1,3 +1,4 @@
+- Investigate the nan issue without clamping
 - Get rid of create normal dist function
 - Get rid of horizontal forward function
 - Remake encoder to output the size specified in the config

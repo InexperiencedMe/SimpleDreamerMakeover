@@ -12,19 +12,19 @@ import imageio
 
 
 class Dreamer:
-    def __init__(self, observationShape, discreteActionBool, actionSize, actionLow, actionHigh, config, device):
-        self.device             = device
+    def __init__(self, observationShape, actionSize, actionLow, actionHigh, device, config):
+        self.observationShape   = observationShape
         self.actionSize         = actionSize
-        self.discreteActionBool = discreteActionBool
         self.config             = config
+        self.device             = device
 
         self.recurrentSize  = config.recurrentSize
         self.latentSize     = config.latentLength*config.latentClasses
         self.fullStateSize  = config.recurrentSize + self.latentSize
 
-        self.actor           = Actor(self.fullStateSize, actionSize, device, config.actor, actionLow=actionLow, actionHigh=actionHigh).to(self.device)
+        self.actor           = Actor(self.fullStateSize, actionSize, actionLow, actionHigh, device,                                  config.actor           ).to(self.device)
         self.critic          = Critic(self.fullStateSize,                                                                            config.critic          ).to(self.device)
-        self.encoder         = Encoder(observationShape,                                                                             config.encoder         ).to(self.device) # Should have output size
+        self.encoder         = Encoder(observationShape, self.config.encodedObsSize,                                                 config.encoder         ).to(self.device)
         self.decoder         = Decoder(self.fullStateSize, observationShape,                                                         config.decoder         ).to(self.device)
         self.recurrentModel  = RecurrentModel(config.recurrentSize, self.latentSize, actionSize,                                     config.recurrentModel  ).to(self.device)
         self.priorNet        = PriorNet(config.recurrentSize, config.latentLength, config.latentClasses,                             config.priorNet        ).to(self.device)
@@ -50,7 +50,7 @@ class Dreamer:
         self.totalGradientSteps = 0
 
     def worldModelTraining(self, data):
-        data.encodedObservation = self.encoder(data.observation)
+        data.encodedObservation = self.encoder(data.observation.view(-1, *self.observationShape)).view(self.config.batchSize, self.config.batchLength, -1)
         previousRecurrentState, previousLatentState = torch.zeros(len(data.action), self.recurrentSize, device=self.device), torch.zeros(len(data.action), self.latentSize, device=self.device)
 
         recurrentStates, priorsLogits, posteriors, posteriorsLogits = [], [], [], []
@@ -171,24 +171,19 @@ class Dreamer:
             action = torch.zeros(1, self.actionSize).to(self.device)
 
             observation = env.reset(seed=seed + self.totalEpisodes)
-            encodedObservation = self.encoder(torch.from_numpy(observation).float().to(self.device))
+            encodedObservation = self.encoder(torch.from_numpy(observation).float().unsqueeze(0).to(self.device))
 
             currentScore, stepCount, done, frames = 0, 0, False, []
             while not done:
                 recurrentState = self.recurrentModel(recurrentState, latentState, action)
                 latentState, _   = self.posteriorNet(torch.cat((recurrentState, encodedObservation.view(1, -1)), -1))
-                action         = self.actor(torch.cat((recurrentState, latentState), -1)).detach()
 
-                if self.discreteActionBool:
-                    actionBuffered = action.cpu().numpy()
-                    actionForEnv = actionBuffered.argmax()
-                else:
-                    actionBuffered = action.cpu().numpy()[0]
-                    actionForEnv = actionBuffered
+                action          = self.actor(torch.cat((recurrentState, latentState), -1))
+                actionNumpy     = action.cpu().numpy().reshape(-1)
 
-                nextObservation, reward, done = env.step(actionForEnv)
+                nextObservation, reward, done = env.step(actionNumpy)
                 if not evaluation:
-                    self.buffer.add(observation, actionBuffered, reward, nextObservation, done)
+                    self.buffer.add(observation, actionNumpy, reward, nextObservation, done)
 
                 if saveVideo and i == 0:
                     frame = env.render()
@@ -196,7 +191,7 @@ class Dreamer:
                     targetWidth = (frame.shape[1] + macroBlockSize - 1)//macroBlockSize*macroBlockSize
                     frames.append(cv.resize(frame, (targetWidth, targetHeight), interpolation=cv.INTER_LINEAR))
 
-                encodedObservation = self.encoder(torch.from_numpy(nextObservation).float().to(self.device))
+                encodedObservation = self.encoder(torch.from_numpy(nextObservation).float().unsqueeze(0).to(self.device))
                 observation = nextObservation
                 
                 currentScore += reward

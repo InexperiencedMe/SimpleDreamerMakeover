@@ -4,11 +4,10 @@ import numpy as np
 def getEnvProperties(env):
     assert isinstance(env.action_space, gym.spaces.Box), "Sorry, supporting only discrete action space for now"
     observationShape = env.observation_space.shape
-    discreteActionBool = False
     actionSize = env.action_space.shape[0]
     actionLow = env.action_space.low.tolist()
     actionHigh = env.action_space.high.tolist()
-    return observationShape, discreteActionBool, actionSize, actionLow, actionHigh
+    return observationShape, actionSize, actionLow, actionHigh
 
 class GymPixelsProcessingWrapper(gym.ObservationWrapper):
     def __init__(self, env):

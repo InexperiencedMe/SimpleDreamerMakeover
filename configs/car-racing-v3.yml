@@ -1,14 +1,13 @@
 environmentName: CarRacing-v3
-runName: DV3ActorLossSAMPLE
+runName: NewEncoder
 seed: 1
 
-# total gradients steps will be iterations * replayRatio
-iterationsNum: 40
+gradientSteps: 40000
 replayRatio: 100
 saveMetrics: True        # Saves metrics at replayRatio interval
 saveCheckpoints: True
 checkpointInterval: 2000
-resume: True
+resume: False
 checkpointToLoad: 96k
 
 episodesBeforeStart: 1
@@ -23,7 +22,7 @@ dreamer:
     recurrentSize: 600
     latentLength: 16
     latentClasses: 16
-    encodedObsSize: 1024 #FIXME: You can't just modify it
+    encodedObsSize: 1024
 
     useContinuationPrediction: False
     actorLR: 0.00004
