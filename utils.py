@@ -129,20 +129,6 @@ def plotMetrics(filename, title="", savePath="metricsPlot", window=10):
     fig.write_html(savePath)
 
 
-def horizontal_forward(network, x, y=None, input_shape=(-1,), output_shape=(-1,)):
-    batch_with_horizon_shape = x.shape[: -len(input_shape)]
-    if not batch_with_horizon_shape:
-        batch_with_horizon_shape = (1,)
-    if y is not None:
-        x = torch.cat((x, y), -1)
-        input_shape = (x.shape[-1],)
-    x = x.reshape(-1, *input_shape)
-    x = network(x)
-
-    x = x.reshape(*batch_with_horizon_shape, *output_shape)
-    return x
-
-
 def sequentialModel1D(inputSize, hiddenSizes, outputSize, activationFunction="Tanh", finishWithActivation=False):
     activationFunction = getattr(nn, activationFunction)()
     layers = []

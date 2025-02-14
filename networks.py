@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from torch.distributions import Normal, Bernoulli, Independent, OneHotCategoricalStraightThrough
 from torch.distributions.utils import probs_to_logits
 
-from utils import sequentialModel1D, horizontal_forward
+from utils import sequentialModel1D
 
 
 
@@ -84,64 +84,44 @@ class ContinueModel(nn.Module):
         return Bernoulli(logits=self.network(x).squeeze(-1))
 
 
-class Encoder(nn.Module):
+class EncoderConv(nn.Module):
     def __init__(self, inputShape, outputSize, config):
         super().__init__()
         self.config = config
         activation = getattr(nn, self.config.activation)()
-        c, h, w = inputShape
+        channels, height, width = inputShape
         self.outputSize = outputSize
+
         self.convolutionalNet = nn.Sequential(
-            nn.Conv2d(c, 8,     kernel_size=4, stride=2, padding=1),    activation,
-            nn.Conv2d(8, 16,    kernel_size=4, stride=2, padding=1),    activation,
-            nn.Conv2d(16, 32,   kernel_size=4, stride=2, padding=1),    activation,
-            nn.Conv2d(32, 64,   kernel_size=4, stride=2, padding=1),    activation,
+            nn.Conv2d(channels,            self.config.depth*1, self.config.kernelSize, self.config.stride, padding=1), activation,
+            nn.Conv2d(self.config.depth*1, self.config.depth*2, self.config.kernelSize, self.config.stride, padding=1), activation,
+            nn.Conv2d(self.config.depth*2, self.config.depth*4, self.config.kernelSize, self.config.stride, padding=1), activation,
+            nn.Conv2d(self.config.depth*4, self.config.depth*8, self.config.kernelSize, self.config.stride, padding=1), activation,
             nn.Flatten(),
-            nn.Linear(64 * (h // 16) * (w // 16), outputSize),          activation)
+            nn.Linear(self.config.depth*8*(height // (self.config.stride ** 4))*(width // (self.config.stride ** 4)), outputSize), activation)
 
     def forward(self, x):
         return self.convolutionalNet(x).view(-1, self.outputSize)
 
 
-# # Needs a remake
-# class Encoder(nn.Module):
-#     def __init__(self, observationShape, config):
-#         super().__init__()
-#         self.config = config
-
-#         activation = getattr(nn, self.config.activation)()
-#         self.observationShape = observationShape
-
-#         self.network = nn.Sequential(
-#             nn.Conv2d(self.observationShape[0], self.config.depth*1, self.config.kernel_size, self.config.stride),    activation,
-#             nn.Conv2d(self.config.depth*1, self.config.depth*2, self.config.kernel_size, self.config.stride),       activation,
-#             nn.Conv2d(self.config.depth*2, self.config.depth*4, self.config.kernel_size, self.config.stride),       activation,
-#             nn.Conv2d(self.config.depth*4, self.config.depth*8, self.config.kernel_size, self.config.stride),       activation)
-
-#     def forward(self, x):
-#         return horizontal_forward(self.network, x, input_shape=self.observationShape)
-
-# Needs a remake
-class Decoder(nn.Module):
-    def __init__(self, inputSize, observationShape, config):
+class DecoderConv(nn.Module):
+    def __init__(self, inputSize, outputShape, config):
         super().__init__()
-        self.inputSize = inputSize
-        self.observationShape = observationShape
         self.config = config
+        self.channels, self.height, self.width = outputShape
         activation = getattr(nn, self.config.activation)()
 
         self.network = nn.Sequential(
             nn.Linear(inputSize, self.config.depth*32),
             nn.Unflatten(1, (self.config.depth*32, 1)),
             nn.Unflatten(2, (1, 1)),
-            nn.ConvTranspose2d(self.config.depth*32, self.config.depth*4, self.config.kernel_size, self.config.stride),         activation,
-            nn.ConvTranspose2d(self.config.depth*4, self.config.depth*2, self.config.kernel_size, self.config.stride),          activation,
-            nn.ConvTranspose2d(self.config.depth*2, self.config.depth*1, self.config.kernel_size + 1, self.config.stride),      activation,
-            nn.ConvTranspose2d(self.config.depth*1, self.observationShape[0], self.config.kernel_size + 1, self.config.stride))
+            nn.ConvTranspose2d(self.config.depth*32, self.config.depth*4, self.config.kernelSize,     self.config.stride),    activation,
+            nn.ConvTranspose2d(self.config.depth*4,  self.config.depth*2, self.config.kernelSize,     self.config.stride),    activation,
+            nn.ConvTranspose2d(self.config.depth*2,  self.config.depth*1, self.config.kernelSize + 1, self.config.stride),    activation,
+            nn.ConvTranspose2d(self.config.depth*1,  self.channels,       self.config.kernelSize + 1, self.config.stride))
 
     def forward(self, x):
-        x = horizontal_forward(self.network, x, input_shape=(self.inputSize,), output_shape=self.observationShape)
-        return Independent(Normal(x, 1), len(self.observationShape))
+        return self.network(x)
 
 
 LOG_STD_MAX = 2
@@ -158,17 +138,17 @@ class Actor(nn.Module):
 
     def forward(self, x, training=False):
         mean, logStd = self.network(x).chunk(2, dim=-1)
-        logStd = LOG_STD_MIN + 0.5 * (LOG_STD_MAX - LOG_STD_MIN) * (logStd + 1) # Transforms range (-1, 1) to (min, max)
+        logStd = LOG_STD_MIN + 0.5*(LOG_STD_MAX - LOG_STD_MIN)*(logStd + 1) # Transforms range (-1, 1) to (min, max)
         logStd = torch.clamp(logStd, LOG_STD_MIN, LOG_STD_MAX) # This saves from nan on mean, weird
         std = torch.exp(logStd)
 
         distribution = Normal(mean, std)
         sample = distribution.sample()
         sampleTanh = torch.tanh(sample)
-        action = sampleTanh * self.actionScale + self.actionBias
+        action = sampleTanh*self.actionScale + self.actionBias
         if training:
             logprobs = distribution.log_prob(sample)
-            logprobs -= torch.log(self.actionScale * (1 - sampleTanh.pow(2)) + 1e-6)
+            logprobs -= torch.log(self.actionScale*(1 - sampleTanh.pow(2)) + 1e-6)
             entropy = distribution.entropy()
             return action, logprobs.sum(-1), entropy.sum(-1)
         else:
