@@ -8,7 +8,6 @@ from utils import saveLossesToCSV, ensureParentFolders
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-
 def main(configFile):
     config = loadConfig(configFile)
     seedEverything(config.seed)

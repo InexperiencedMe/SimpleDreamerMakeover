@@ -29,6 +29,6 @@ class CleanGymWrapper(gym.Wrapper):
         done = terminated or truncated
         return obs, reward, done
 
-    def reset(self, seed):
+    def reset(self, seed=None):
         obs, info = self.env.reset(seed=seed)
         return obs

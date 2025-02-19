@@ -4,3 +4,6 @@ metrics
 plots
 videos
 test.ipynb
+visualizations
+mainVisualizations.py
+dreamerVisual.py

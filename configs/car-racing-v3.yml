@@ -2,15 +2,15 @@ environmentName: CarRacing-v3
 runName: NewDecoder2
 seed: 1
 
-gradientSteps: 38000
+gradientSteps: 10000
 replayRatio: 100
 saveMetrics: True        # Saves metrics at replayRatio interval
 saveCheckpoints: True
 checkpointInterval: 2000
-resume: False
-checkpointToLoad: 12k
+resume: True
+checkpointToLoad: 100k
 
-episodesBeforeStart: 1
+episodesBeforeStart: 5
 numInteractionEpisodes: 1
 numEvaluationEpisodes: 1
 
@@ -36,7 +36,7 @@ dreamer:
     lambda_: 0.95
     betaPrior: 1.0
     betaPosterior: 0.1
-    entropyScale: 0.0003
+    entropyScale: 0.0000
 
     buffer:
         capacity: 50000
@@ -44,13 +44,13 @@ dreamer:
     encoder: 
         depth: 16
         stride: 2
-        kernel_size: 4
+        kernelSize: 4
         activation: ReLU
 
     decoder: 
         depth: 16
         stride: 2
-        kernel_size: 5
+        kernelSize: 5
         activation: ReLU
 
     recurrentModel: 

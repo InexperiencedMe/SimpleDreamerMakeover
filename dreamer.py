@@ -93,7 +93,7 @@ class Dreamer:
         posteriorLoss   = self.config.betaPosterior*torch.maximum(posteriorLoss, freeNats)
         klLoss          = (priorLoss + posteriorLoss).mean()
 
-        worldModelLoss =  reconstructionLoss + rewardLoss + klLoss
+        worldModelLoss =  reconstructionLoss + rewardLoss + klLoss # I think that the reconstruction loss is relatively a bit too high (11k) 
         
         if self.config.useContinuationPrediction:
             continueDistribution = self.continuePredictor(fullStates)
@@ -165,13 +165,13 @@ class Dreamer:
         return metrics
 
     @torch.no_grad()
-    def environmentInteraction(self, env, numEpisodes, seed=0, evaluation=False, saveVideo=False, filename="videos/unnamedVideo", fps=30, macroBlockSize=16):
+    def environmentInteraction(self, env, numEpisodes, seed=None, evaluation=False, saveVideo=False, filename="videos/unnamedVideo", fps=30, macroBlockSize=16):
         scores = []
         for i in range(numEpisodes):
             recurrentState, latentState = torch.zeros(1, self.recurrentSize, device=self.device), torch.zeros(1, self.latentSize, device=self.device)
             action = torch.zeros(1, self.actionSize).to(self.device)
 
-            observation = env.reset(seed=seed + self.totalEpisodes)
+            observation = env.reset(seed= (seed + self.totalEpisodes if seed else None))
             encodedObservation = self.encoder(torch.from_numpy(observation).float().unsqueeze(0).to(self.device))
 
             currentScore, stepCount, done, frames = 0, 0, False, []
@@ -213,6 +213,7 @@ class Dreamer:
                     break
         return sum(scores)/numEpisodes
     
+
     def saveCheckpoint(self, checkpointPath):
         if not checkpointPath.endswith('.pth'):
             checkpointPath += '.pth'
