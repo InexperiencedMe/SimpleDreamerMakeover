@@ -36,7 +36,7 @@ dreamer:
     lambda_: 0.95
     betaPrior: 1.0
     betaPosterior: 0.1
-    entropyScale: 0.0000
+    entropyScale: 0.0003
 
     buffer:
         capacity: 50000
