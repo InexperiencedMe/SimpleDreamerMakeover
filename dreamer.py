@@ -80,10 +80,10 @@ class Dreamer:
         rewardDistribution  = self.rewardPredictor(fullStates)
         rewardLoss          = -rewardDistribution.log_prob(data.reward[:, 1:].squeeze(-1)).mean()
 
-        priorDistribution       = Independent(OneHotCategoricalStraightThrough(logits=priorsLogits), 1)
-        priorDistributionSG     = Independent(OneHotCategoricalStraightThrough(logits=priorsLogits.detach()), 1)
-        posteriorDistribution   = Independent(OneHotCategoricalStraightThrough(logits=posteriorsLogits), 1)
-        posteriorDistributionSG = Independent(OneHotCategoricalStraightThrough(logits=posteriorsLogits.detach()), 1)
+        priorDistribution       = Independent(OneHotCategoricalStraightThrough(logits=priorsLogits              ), 1)
+        priorDistributionSG     = Independent(OneHotCategoricalStraightThrough(logits=priorsLogits.detach()     ), 1)
+        posteriorDistribution   = Independent(OneHotCategoricalStraightThrough(logits=posteriorsLogits          ), 1)
+        posteriorDistributionSG = Independent(OneHotCategoricalStraightThrough(logits=posteriorsLogits.detach() ), 1)
 
         priorLoss       = kl_divergence(posteriorDistributionSG, priorDistribution  )
         posteriorLoss   = kl_divergence(posteriorDistribution  , priorDistributionSG)
@@ -132,10 +132,10 @@ class Dreamer:
         logprobs    = torch.stack(logprobs[1:],  dim=1)
         entropies   = torch.stack(entropies[1:], dim=1)
         
-        predictedRewards = self.rewardPredictor(fullStates).mean
+        predictedRewards = self.rewardPredictor(fullStates[:, :-1]).mean
         values           = self.critic(fullStates).mean
-        continues        = self.continuePredictor(fullStates).mean if self.config.useContinuationPrediction else self.config.discount*torch.ones_like(values)
-        lambdaValues     = computeLambdaValues(predictedRewards, values, continues, self.config.imaginationHorizon, self.device, self.config.lambda_)
+        continues        = self.continuePredictor(fullStates).mean if self.config.useContinuationPrediction else torch.full_like(predictedRewards, self.config.discount)
+        lambdaValues     = computeLambdaValues(predictedRewards, values, continues, self.config.lambda_)
 
         _, inverseScale = self.valueMoments(lambdaValues)
         advantages      = (lambdaValues - values[:, :-1])/inverseScale

@@ -146,24 +146,12 @@ def sequentialModel1D(inputSize, hiddenSizes, outputSize, activationFunction="Ta
     return nn.Sequential(*layers)
 
 
-def computeLambdaValues(rewards, values, continues, horizon_length, device, lambda_):
-    """
-    rewards : (batch_size, time_step, hidden_size)
-    values : (batch_size, time_step, hidden_size)
-    continue flag will be added
-    """
-    rewards = rewards[:, :-1]
-    continues = continues[:, :-1]
-    next_values = values[:, 1:]
-    last = next_values[:, -1]
-    inputs = rewards + continues * next_values * (1 - lambda_)
-
-    outputs = []
-    # single step
-    for index in reversed(range(horizon_length - 1)):
-        last = inputs[:, index] + continues[:, index] * lambda_ * last
-        outputs.append(last)
-    returns = torch.stack(list(reversed(outputs)), dim=1).to(device)
+def computeLambdaValues(rewards, values, continues, lambda_=0.95):
+    returns = torch.zeros_like(rewards)
+    bootstrap = values[:, -1]
+    for i in reversed(range(rewards.shape[-1])):
+        returns[:, i] = rewards[:, i] + continues[:, i] * ((1 - lambda_) * values[:, i] + lambda_ * bootstrap)
+        bootstrap = returns[:, i]
     return returns
 
 

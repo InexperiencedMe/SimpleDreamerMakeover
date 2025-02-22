@@ -1,5 +1,5 @@
 environmentName: CarRacing-v3
-runName: NewDecoder2
+runName: RevolutionaryLambdas
 seed: 1
 
 gradientSteps: 10000
@@ -8,7 +8,7 @@ saveMetrics: True        # Saves metrics at replayRatio interval
 saveCheckpoints: True
 checkpointInterval: 2000
 resume: True
-checkpointToLoad: 100k
+checkpointToLoad: 70k
 
 episodesBeforeStart: 5
 numInteractionEpisodes: 1
@@ -31,9 +31,9 @@ dreamer:
     gradientNormType: 2
     gradientClip: 100
 
-    freeNats: 1
-    discount: 0.99
+    discount: 0.997
     lambda_: 0.95
+    freeNats: 1
     betaPrior: 1.0
     betaPosterior: 0.1
     entropyScale: 0.0003
