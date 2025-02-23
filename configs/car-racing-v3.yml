@@ -4,10 +4,10 @@ seed: 1
 
 gradientSteps: 10000
 replayRatio: 100
-saveMetrics: True        # Saves metrics at replayRatio interval
-saveCheckpoints: True
+saveMetrics: False        # Saves metrics at replayRatio interval
+saveCheckpoints: False
 checkpointInterval: 2000
-resume: True
+resume: False
 checkpointToLoad: 70k
 
 episodesBeforeStart: 5

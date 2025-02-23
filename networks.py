@@ -3,9 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Normal, Bernoulli, Independent, OneHotCategoricalStraightThrough
 from torch.distributions.utils import probs_to_logits
-
 from utils import sequentialModel1D
-
 
 
 class RecurrentModel(nn.Module):
@@ -124,8 +122,6 @@ class DecoderConv(nn.Module):
         return self.network(x)
 
 
-LOG_STD_MAX = 2
-LOG_STD_MIN = -5
 class Actor(nn.Module):
     def __init__(self, inputSize, actionSize, actionLow, actionHigh, device, config):
         super().__init__()
@@ -137,6 +133,9 @@ class Actor(nn.Module):
 
 
     def forward(self, x, training=False):
+        LOG_STD_MAX = 2
+        LOG_STD_MIN = -5
+
         mean, logStd = self.network(x).chunk(2, dim=-1)
         logStd = LOG_STD_MIN + 0.5*(LOG_STD_MAX - LOG_STD_MIN)*(logStd + 1) # Transforms range (-1, 1) to (min, max)
         logStd = torch.clamp(logStd, LOG_STD_MIN, LOG_STD_MAX) # This saves from nan on mean, weird
