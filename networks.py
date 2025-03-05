@@ -133,12 +133,9 @@ class Actor(nn.Module):
 
 
     def forward(self, x, training=False):
-        LOG_STD_MAX = 2
-        LOG_STD_MIN = -5
-
+        logStdMin, logStdMax = -5, 2
         mean, logStd = self.network(x).chunk(2, dim=-1)
-        logStd = LOG_STD_MIN + 0.5*(LOG_STD_MAX - LOG_STD_MIN)*(logStd + 1) # Transforms range (-1, 1) to (min, max)
-        logStd = torch.clamp(logStd, LOG_STD_MIN, LOG_STD_MAX) # This saves from nan on mean, weird
+        logStd = logStdMin + (logStdMax - logStdMin)/2*(torch.tanh(logStd) + 1) # (-1, 1) to (min, max)
         std = torch.exp(logStd)
 
         distribution = Normal(mean, std)

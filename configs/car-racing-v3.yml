@@ -1,14 +1,14 @@
 environmentName: CarRacing-v3
-runName: RevolutionaryLambdas
+runName: TANH_NO_CLAMPING
 seed: 1
 
-gradientSteps: 10000
+gradientSteps: 20000
 replayRatio: 100
-saveMetrics: False        # Saves metrics at replayRatio interval
-saveCheckpoints: False
+saveMetrics: True        # Saves metrics at replayRatio interval
+saveCheckpoints: True
 checkpointInterval: 2000
 resume: False
-checkpointToLoad: 70k
+checkpointToLoad: 16k
 
 episodesBeforeStart: 5
 numInteractionEpisodes: 1
@@ -45,53 +45,53 @@ dreamer:
         depth: 16
         stride: 2
         kernelSize: 4
-        activation: ReLU
+        activation: Tanh
 
     decoder: 
         depth: 16
         stride: 2
         kernelSize: 5
-        activation: ReLU
+        activation: Tanh
 
     recurrentModel: 
         hiddenSize: 200
-        activation: ELU
+        activation: Tanh
 
     priorNet: 
         hiddenSize: 200
         numLayers: 2
-        activation: ELU
+        activation: Tanh
         min_std: 0.1
         uniformMix: 0.01
 
     posteriorNet:
         hiddenSize: 200
         numLayers: 2
-        activation: ELU
+        activation: Tanh
         min_std: 0.1
         uniformMix: 0.01
         
     reward:
         hiddenSize: 400
         numLayers: 2
-        activation: ELU
+        activation: Tanh
 
     continuation:
         hiddenSize: 400
         numLayers: 3
-        activation: ELU
+        activation: Tanh
     
     actor:
         hiddenSize: 400
         min_std: 0.0001
         init_std: 5.
         mean_scale: 1
-        activation: ELU
+        activation: Tanh
         numLayers: 2
 
     critic: 
         hiddenSize: 400
-        activation: ELU
+        activation: Tanh
         numLayers: 3 
 
 folderNames:
