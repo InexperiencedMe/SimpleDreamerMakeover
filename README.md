@@ -17,7 +17,9 @@ Only CarRacing-v3 is solved for now.
 <img src="additionalMaterials/CarRacing-v3.jpg"/>
 </p>
 
-Plot is nicely cropped, since after that point the performance started slowly declining. Environment steps are roughly 1000x the gradient steps, so around 600k environments steps. I mostly show gradient steps because I could greatly increase the replay ratio to minimize the environment steps.
+The trace shows a moving average of 10 values. This plot is also nicely cropped, since after that point the performance started slowly declining from overtraining.
+
+Environment steps are roughly 10x the gradient steps, so 60k gradient steps is around 600k environments steps. I mostly show gradient steps because I could greatly increase the replay ratio to minimize the environment steps. I could probably slightly increase the learning rate to learn faster as well, but oh well, I have no idea what axis to show.
 
 ## How to use it?
 
@@ -35,7 +37,7 @@ For the list of available arguments check main.py.
 - TwoHot loss isn't implemented yet with rewardModel and critic. I made an attempt and wrote neat code for it, but it didn't work and I'm out of ideas on how to proceed, so that's yet to be finished. For now, rewardModel and critic use normal distribution.
 - Discrete actions. That will be easy, just a few lines of code when I'll start solving more environments.
 - Add vector observations encoder and decoder.
-- Reconstruction loss is huge (11k), messing up graphs' scale. But graphs are only for debugging, so it's not a priority.
+- Reconstruction loss is huge (11k), messing up graphs' axis scale. But graphs are only for debugging, so it's not a priority.
 - Soft Critic cannot be neatly implemented with the current setup, without unnecessarily many net passes. I'm ignoring it for now, but maybe it will be needed one day.
 - Continue prediction is untested, so there is no guarantee that it works.
 
