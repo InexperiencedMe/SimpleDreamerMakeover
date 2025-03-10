@@ -1,6 +1,6 @@
 # Natural Dreamer is a natural.
 
-Natural Dreamer is a simple and clean implementation of DreamerV3 paper, that makes it maximally easy to study the architecture and understand the training pipeline.
+Natural Dreamer is a simple and clean implementation of [DreamerV3 paper](https://arxiv.org/pdf/2301.04104), that makes it maximally easy to study the architecture and understand the training pipeline.
 
 <p align="center">
 <img src="additionalMaterials/OthersVsNaturalDreamer.jpg"/>
