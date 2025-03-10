@@ -50,7 +50,7 @@ def main(configFile):
         if config.saveMetrics:
             metricsBase = {"envSteps": dreamer.totalEnvSteps, "gradientSteps": dreamer.totalGradientSteps, "totalReward" : mostRecentScore}
             saveLossesToCSV(metricsFilename, metricsBase | worldModelMetrics | actorCriticMetrics)
-            plotMetrics(f"{metricsFilename}", savePath=f"{plotFilename}")
+            plotMetrics(f"{metricsFilename}", savePath=f"{plotFilename}", title=f"{config.environmentName}")
 
 
 if __name__ == "__main__":

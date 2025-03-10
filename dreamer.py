@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 from torch.distributions import kl_divergence, Independent, OneHotCategoricalStraightThrough, Normal
 import numpy as np
-import cv2 as cv
 import os
 
 from networks import RecurrentModel, PriorNet, PosteriorNet, RewardModel, ContinueModel, EncoderConv, DecoderConv, Actor, Critic
@@ -73,11 +72,11 @@ class Dreamer:
         posteriorsLogits            = torch.stack(posteriorsLogits,             dim=1)
         fullStates                  = torch.cat((recurrentStates, posteriors), dim=-1)
 
-        reconstructionMeans        = self.decoder(fullStates.view(-1, self.fullStateSize)).view(self.config.batchSize, self.config.batchLength-1, *self.observationShape)
-        reconstructionDistribution = Independent(Normal(reconstructionMeans, 1), len(self.observationShape))
+        reconstructionMeans        =  self.decoder(fullStates.view(-1, self.fullStateSize)).view(self.config.batchSize, self.config.batchLength-1, *self.observationShape)
+        reconstructionDistribution =  Independent(Normal(reconstructionMeans, 1), len(self.observationShape))
         reconstructionLoss         = -reconstructionDistribution.log_prob(data.observation[:, 1:]).mean()
 
-        rewardDistribution  = self.rewardPredictor(fullStates)
+        rewardDistribution  =  self.rewardPredictor(fullStates)
         rewardLoss          = -rewardDistribution.log_prob(data.reward[:, 1:].squeeze(-1)).mean()
 
         priorDistribution       = Independent(OneHotCategoricalStraightThrough(logits=priorsLogits              ), 1)
@@ -111,8 +110,6 @@ class Dreamer:
             "reconstructionLoss"    : reconstructionLoss.item(),
             "rewardPredictorLoss"   : rewardLoss.item(),
             "klLoss"                : klLoss.item() - klLossShiftForGraphing}
-            
-
         return fullStates.view(-1, self.fullStateSize).detach(), metrics
 
 
@@ -190,7 +187,7 @@ class Dreamer:
                     frame = env.render()
                     targetHeight = (frame.shape[0] + macroBlockSize - 1)//macroBlockSize*macroBlockSize # getting rid of imagio error
                     targetWidth = (frame.shape[1] + macroBlockSize - 1)//macroBlockSize*macroBlockSize
-                    frames.append(cv.resize(frame, (targetWidth, targetHeight), interpolation=cv.INTER_LINEAR))
+                    frames.append(np.pad(frame, ((0, targetHeight - frame.shape[0]), (0, targetWidth - frame.shape[1]), (0, 0)), mode='edge'))
 
                 encodedObservation = self.encoder(torch.from_numpy(nextObservation).float().unsqueeze(0).to(self.device))
                 observation = nextObservation
@@ -211,7 +208,7 @@ class Dreamer:
                                 video.append_data(frame)
 
                     break
-        return sum(scores)/numEpisodes
+        return sum(scores)/numEpisodes if numEpisodes else None
     
 
     def saveCheckpoint(self, checkpointPath):
@@ -237,6 +234,7 @@ class Dreamer:
             checkpoint['continuePredictor'] = self.continuePredictor.state_dict()
         torch.save(checkpoint, checkpointPath)
 
+
     def loadCheckpoint(self, checkpointPath):
         if not checkpointPath.endswith('.pth'):
             checkpointPath += '.pth'
@@ -260,3 +258,4 @@ class Dreamer:
         self.totalGradientSteps = checkpoint['totalGradientSteps']
         if self.config.useContinuationPrediction:
             self.continuePredictor.load_state_dict(checkpoint['continuePredictor'])
+

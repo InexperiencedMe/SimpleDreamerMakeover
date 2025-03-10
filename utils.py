@@ -88,41 +88,35 @@ def plotMetrics(filename, title="", savePath="metricsPlot", window=10):
             name=f"{column} (smoothed)",
             line=dict(color=colors[idx % num_colors], width=2)))
     
-    fig.add_trace(pgo.Scatter(
-    x=data["envSteps"], 
-    y=[None] * len(data["envSteps"]),  # Dummy points to show second axis
-    mode='lines',
-    name="Environment Steps (Secondary)",
-    xaxis='x2',
-    showlegend=False))
-
     fig.update_layout(
-    title=f"{title}",
-    title_x=0.5,
-    xaxis=dict(
-        title="Gradient Steps",
-        showgrid=True,
-        zeroline=False
-    ),
-    xaxis2=dict(
-        title="Environment Steps",
-        overlaying='x',
-        side='top',
-        showgrid=False,
-        zeroline=False
-    ),
-    yaxis_title="Value",
-    template="plotly_dark",
-    height=1080,
-    width=1920,
-    legend=dict(
-        x=0.04,
-        y=0.04,
-        xanchor="left",
-        yanchor="bottom",
-        bgcolor="rgba(0,0,0,0.8)",
-        bordercolor="White",
-        borderwidth=2))
+        title=dict(
+            text=title,
+            x=0.5,
+            font=dict(size=30),
+            yanchor='top'
+        ),
+        xaxis=dict(
+            title="Gradient Steps",
+            showgrid=True,
+            zeroline=False,
+            position=0
+        ),
+        yaxis_title="Value",
+        template="plotly_dark",
+        height=1080,
+        width=1920,
+        margin=dict(t=60, l=40, r=40, b=40),
+        legend=dict(
+            x=0.02,
+            y=0.98,
+            xanchor="left",
+            yanchor="top",
+            bgcolor="rgba(0,0,0,0.5)",
+            bordercolor="White",
+            borderwidth=2,
+            font=dict(size=12)
+        )
+    )
 
     if not savePath.endswith(".html"):
         savePath += ".html"

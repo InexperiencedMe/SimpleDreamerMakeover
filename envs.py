@@ -2,7 +2,7 @@ import gymnasium as gym
 import numpy as np
 
 def getEnvProperties(env):
-    assert isinstance(env.action_space, gym.spaces.Box), "Sorry, supporting only discrete action space for now"
+    assert isinstance(env.action_space, gym.spaces.Box), "Sorry, supporting only continuous action space for now"
     observationShape = env.observation_space.shape
     actionSize = env.action_space.shape[0]
     actionLow = env.action_space.low.tolist()

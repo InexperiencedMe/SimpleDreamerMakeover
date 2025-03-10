@@ -2,15 +2,15 @@ environmentName: CarRacing-v3
 runName: TANH_NO_CLAMPING
 seed: 1
 
-gradientSteps: 20000
+gradientSteps: 60000
 replayRatio: 100
 saveMetrics: True        # Saves metrics at replayRatio interval
 saveCheckpoints: True
 checkpointInterval: 2000
 resume: False
-checkpointToLoad: 16k
+checkpointToLoad: 90k
 
-episodesBeforeStart: 5
+episodesBeforeStart: 0
 numInteractionEpisodes: 1
 numEvaluationEpisodes: 1
 
