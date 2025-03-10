@@ -32,7 +32,7 @@ class Dreamer:
         if config.useContinuationPrediction:
             self.continuePredictor  = ContinueModel(self.fullStateSize,                                                              config.continuation   ).to(self.device)
 
-        self.buffer         = ReplayBuffer(observationShape, actionSize, config, device)
+        self.buffer         = ReplayBuffer(observationShape, actionSize, config.buffer, device)
         self.valueMoments   = Moments(device)
 
         self.worldModelParameters = (list(self.encoder.parameters()) + list(self.decoder.parameters()) + list(self.recurrentModel.parameters()) +

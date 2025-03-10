@@ -2,61 +2,54 @@ import attridict
 import numpy as np
 import torch
 
+# Code comes from SimpleDreamer repo, I only changed some formatting and names, but I should really remake it.
 class ReplayBuffer(object):
     def __init__(self, observation_shape, action_size, config, device):
-        self.config = config.buffer
+        self.config = config
         self.device = device
         self.capacity = int(self.config.capacity)
 
-        state_type = np.uint8 if len(observation_shape) < 3 else np.float32
+        self.observation        = np.empty((self.capacity, *observation_shape), dtype=np.float32)
+        self.next_observation   = np.empty((self.capacity, *observation_shape), dtype=np.float32)
+        self.action             = np.empty((self.capacity, action_size), dtype=np.float32)
+        self.reward             = np.empty((self.capacity, 1), dtype=np.float32)
+        self.done               = np.empty((self.capacity, 1), dtype=np.float32)
 
-        self.observation = np.empty((self.capacity, *observation_shape), dtype=state_type)
-        self.next_observation = np.empty((self.capacity, *observation_shape), dtype=state_type)
-        self.action = np.empty((self.capacity, action_size), dtype=np.float32)
-        self.reward = np.empty((self.capacity, 1), dtype=np.float32)
-        self.done = np.empty((self.capacity, 1), dtype=np.float32)
-
-        self.buffer_index = 0
+        self.bufferIndex = 0
         self.full = False
 
     def __len__(self):
-        return self.capacity if self.full else self.buffer_index
+        return self.capacity if self.full else self.bufferIndex
 
     def add(self, observation, action, reward, next_observation, done):
-        self.observation[self.buffer_index] = observation
-        self.action[self.buffer_index] = action
-        self.reward[self.buffer_index] = reward
-        self.next_observation[self.buffer_index] = next_observation
-        self.done[self.buffer_index] = done
+        self.observation[self.bufferIndex] = observation
+        self.action[self.bufferIndex] = action
+        self.reward[self.bufferIndex] = reward
+        self.next_observation[self.bufferIndex] = next_observation
+        self.done[self.bufferIndex] = done
 
-        self.buffer_index = (self.buffer_index + 1) % self.capacity
-        self.full = self.full or self.buffer_index == 0
+        self.bufferIndex = (self.bufferIndex + 1) % self.capacity
+        self.full = self.full or self.bufferIndex == 0
 
-    def sample(self, batch_size, chunk_size):
-        """
-        (batch_size, chunk_size, input_size)
-        """
-        last_filled_index = self.buffer_index - chunk_size + 1
-        assert self.full or (last_filled_index > batch_size), "too short dataset or too long chunk_size"
-        sample_index = np.random.randint(0, self.capacity if self.full else last_filled_index, batch_size).reshape(-1, 1)
-        chunk_length = np.arange(chunk_size).reshape(1, -1)
+    def sample(self, batchSize, sequenceSize):
+        lastFilledIndex = self.bufferIndex - sequenceSize + 1
+        assert self.full or (lastFilledIndex > batchSize), "not enough data in the buffer to sample"
+        sampleIndex = np.random.randint(0, self.capacity if self.full else lastFilledIndex, batchSize).reshape(-1, 1)
+        sequenceLength = np.arange(sequenceSize).reshape(1, -1)
 
-        sample_index = (sample_index + chunk_length) % self.capacity
+        sampleIndex = (sampleIndex + sequenceLength) % self.capacity
 
-        observation = torch.as_tensor(self.observation[sample_index], device=self.device).float()
-        next_observation = torch.as_tensor(self.next_observation[sample_index], device=self.device).float()
+        observation         = torch.as_tensor(self.observation[sampleIndex], device=self.device).float()
+        next_observation    = torch.as_tensor(self.next_observation[sampleIndex], device=self.device).float()
 
-        action = torch.as_tensor(self.action[sample_index], device=self.device)
-        reward = torch.as_tensor(self.reward[sample_index], device=self.device)
-        done = torch.as_tensor(self.done[sample_index], device=self.device)
+        action  = torch.as_tensor(self.action[sampleIndex], device=self.device)
+        reward  = torch.as_tensor(self.reward[sampleIndex], device=self.device)
+        done    = torch.as_tensor(self.done[sampleIndex], device=self.device)
 
-        sample = attridict(
-            {
-                "observation": observation,
-                "action": action,
-                "reward": reward,
-                "next_observation": next_observation,
-                "done": done,
-            }
-        )
+        sample = attridict({
+            "observation": observation,
+            "action": action,
+            "reward": reward,
+            "next_observation": next_observation,
+            "done": done})
         return sample

@@ -40,6 +40,7 @@ For the list of available arguments check main.py.
 - Reconstruction loss is huge (11k), messing up graphs' axis scale. But graphs are only for debugging, so it's not a priority.
 - Soft Critic cannot be neatly implemented with the current setup, without unnecessarily many net passes. I'm ignoring it for now, but maybe it will be needed one day.
 - Continue prediction is untested, so there is no guarantee that it works.
+- Remake the buffer. Buffer is currently taken from SimpleDreamer repo, but I should remake it to make it clear and clean like the rest. We don't even need to buffer the nextObservation.
 
 
 ## Acknowledgements
